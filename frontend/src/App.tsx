@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAppDispatch, useAppSelector } from './store/hooks'
 import { setRepo, setTab, selectActiveRepo, selectActiveTab,
          selectNotification, clearNotification } from './store/uiSlice'
-import { useGetReposQuery, useGetPipelineStatusQuery, useIngestRepoMutation } from './store/apiSlice'
+import { useGetReposQuery, useGetPipelineStatusQuery, useIngestRepoMutation, useRemoveRepoMutation } from './store/apiSlice'
 import IssueQueue from './components/IssueQueue'
 import RecommendationPanel from './components/RecommendationPanel'
 import BatchAssignment from './components/BatchAssignment'
@@ -30,6 +30,7 @@ export default function App() {
     pollingInterval: 2000,
   })
   const [ingest, { isLoading: ingesting }] = useIngestRepoMutation()
+  const [removeRepo] = useRemoveRepoMutation()
 
   const [repoInput, setRepoInput] = useState('')
   const [maxPages,  setMaxPages]  = useState(5)
@@ -47,6 +48,15 @@ export default function App() {
     const repo = repoInput.trim()
     await ingest({ repo, max_pages: maxPages })
     dispatch(setRepo(repo))
+  }
+
+  async function handleRemove(repo: string) {
+    if (!window.confirm(`Remove all local data for ${repo}?`)) return
+    await removeRepo(repo).unwrap()
+    if (activeRepo === repo) {
+      dispatch(setRepo(''))
+      setRepoInput('')
+    }
   }
 
   return (
@@ -133,18 +143,27 @@ export default function App() {
               <label className="text-xs text-gray-400 uppercase tracking-wider mb-1 block">Loaded Repos</label>
               <div className="flex flex-col gap-1">
                 {reposData.repos.map(r => (
-                  <button
-                    key={r.repo}
-                    className={`text-left text-sm px-2 py-1.5 rounded transition ${
-                      activeRepo === r.repo
-                        ? 'bg-green-800 text-green-200'
-                        : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
-                    }`}
-                    onClick={() => { dispatch(setRepo(r.repo)); setRepoInput(r.repo) }}
-                  >
-                    <div className="font-medium truncate">{r.repo}</div>
-                    <div className="text-xs text-gray-500">{r.issue_count} issues</div>
-                  </button>
+                  <div key={r.repo} className="flex gap-1 items-stretch">
+                    <button
+                      className={`flex-1 min-w-0 text-left text-sm px-2 py-1.5 rounded transition ${
+                        activeRepo === r.repo
+                          ? 'bg-green-800 text-green-200'
+                          : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
+                      }`}
+                      onClick={() => { dispatch(setRepo(r.repo)); setRepoInput(r.repo) }}
+                    >
+                      <div className="font-medium truncate">{r.repo}</div>
+                      <div className="text-xs text-gray-500">{r.issue_count} issues</div>
+                    </button>
+                    <button
+                      className="px-2 rounded bg-gray-800 text-gray-500 hover:bg-red-950 hover:text-red-300 transition"
+                      title={`Remove ${r.repo}`}
+                      aria-label={`Remove ${r.repo}`}
+                      onClick={() => handleRemove(r.repo)}
+                    >
+                      ×
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>

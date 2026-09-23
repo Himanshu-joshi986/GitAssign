@@ -39,6 +39,12 @@ def test_demo_scan_uses_fallback_developer():
     assert listed["total"] == 1
     assert listed["issues"][0]["number"] == issue_num
 
+def test_remove_repo_clears_local_data():
+    response = client.delete("/api/repos/new/demo")
+    assert response.status_code == 200
+    assert response.json()["status"] == "removed"
+    assert client.get("/api/repos").json()["repos"] == []
+
 # ── Repos ─────────────────────────────────────────────────────────────────────
 
 def test_list_repos_empty():

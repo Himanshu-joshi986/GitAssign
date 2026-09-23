@@ -86,6 +86,11 @@ export const api = createApi({
       query: () => '/repos',
     }),
 
+    removeRepo: builder.mutation<{ status: string; repo: string }, string>({
+      query: (repo) => ({ url: `/repos/${encodeURIComponent(repo)}`, method: 'DELETE' }),
+      invalidatesTags: ['Issues', 'Profiles', 'Repos'],
+    }),
+
     // Issues
     getIssues: builder.query<{ issues: Issue[]; total: number }, { repo: string; state?: string }>({
       query: ({ repo, state = 'all' }) => `/issues?repo=${encodeURIComponent(repo)}&state=${state}&limit=200`,
@@ -175,6 +180,7 @@ export const api = createApi({
 
 export const {
   useGetReposQuery,
+  useRemoveRepoMutation,
   useGetIssuesQuery,
   useGetRecommendationsQuery,
   useGetDevelopersQuery,

@@ -174,6 +174,7 @@ Output: **Critical / High / Medium / Low** + score + factor list.
 |--------|----------|-------------|
 | GET | `/api/health` | Health check |
 | GET | `/api/repos` | List loaded repos |
+| DELETE | `/api/repos/{repo}` | Remove one repository's local data and cache |
 | GET | `/api/issues?repo=&state=all` | Priority-sorted issues (`open` / `closed` / `all`) |
 | GET | `/api/issues/{num}/recommendations?repo=` | Top-K developers + evidence |
 | POST | `/api/assign/batch` | Preview workload-aware batch assignments |

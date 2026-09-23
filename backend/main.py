@@ -530,6 +530,32 @@ def list_repos():
     conn.close()
     return {"repos": [{"repo": r["repo"], "issue_count": r["cnt"]} for r in rows]}
 
+@app.delete("/api/repos/{repo:path}")
+def remove_repo(repo: str):
+    """Remove all locally stored data for one repository."""
+    repo = repo.strip()
+    if not repo:
+        raise HTTPException(status_code=400, detail="Repository name is required")
+    conn = get_conn()
+    tables = [
+        "issues", "pull_requests", "commits", "issue_pr_links",
+        "developer_profiles", "repository_developers", "issue_priority",
+        "recommendations", "assignments",
+    ]
+    existing = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    for table in tables:
+        if table in existing:
+            conn.execute(f'DELETE FROM "{table}" WHERE repo=?', (repo,))
+    conn.commit()
+    conn.close()
+    _pipeline_status.pop(repo, None)
+    from ingestion.github_fetcher import CACHE_DIR
+    import shutil
+    cache_path = Path(CACHE_DIR) / repo.replace("/", "__")
+    if cache_path.exists():
+        shutil.rmtree(cache_path)
+    return {"status": "removed", "repo": repo}
+
 # ── Serve frontend static files ───────────────────────────────────────────────
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(STATIC_DIR):
