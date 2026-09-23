@@ -1,0 +1,9 @@
+{
+  "w1_text_similarity": 0.35,
+  "w2_past_issue_similarity": 0.25,
+  "w3_component_overlap": 0.15,
+  "w4_file_affinity": 0.15,
+  "w5_recency": 0.05,
+  "w6_workload_penalty": 0.05,
+  "capacity_limit": 3
+}

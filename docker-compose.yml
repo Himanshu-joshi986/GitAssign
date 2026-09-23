@@ -1,0 +1,34 @@
+services:
+
+  backend:
+    build: ./backend
+    container_name: gitassign_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data          # persistent cache + SQLite DB
+      - ./docs:/app/docs          # ablation results written here
+      - ./backend/config:/app/config
+    environment:
+      - DB_PATH=data/gitassign.db
+      - CACHE_DIR=data/cache
+      - WEIGHTS_PATH=config/weights.json
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}   # optional — set in .env for higher rate limits
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build: ./frontend
+    container_name: gitassign_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  gitassign_data:
