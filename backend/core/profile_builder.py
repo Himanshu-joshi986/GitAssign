@@ -72,10 +72,12 @@ def _normalise_date(s: str) -> str:
     return ""
 
 
-def build_profiles(repo: str, cutoff_date: str = None):
+def build_profiles(repo: str, cutoff_date: str = None, persist: bool = True):
     """
     Build profiles for all developers in a repo.
     cutoff_date: ISO string — only use data before this date (for replay evaluation).
+    persist: write profiles to the live profile table. Historical replay profiles
+        should set this to False so evaluation cannot overwrite live state.
     """
     conn = get_conn()
 
@@ -93,9 +95,11 @@ def build_profiles(repo: str, cutoff_date: str = None):
         profile = _build_single(conn, repo, dev, cutoff_date)
         if profile:
             profiles[dev] = profile
-            _save_profile(conn, repo, dev, profile)
+            if persist:
+                _save_profile(conn, repo, dev, profile)
 
-    conn.commit()
+    if persist:
+        conn.commit()
     conn.close()
     print(f"[profiles] built {len(profiles)} profiles for {repo}")
     return profiles
@@ -104,12 +108,11 @@ def _build_single(conn, repo: str, developer: str, cutoff_date: str = None) -> d
     """Build a single developer profile."""
 
     # Date filter clause
-    date_filter = ""
     date_params_issues = [repo, developer]
     date_params_commits = [repo, developer]
     if cutoff_date:
         date_filter_issues = " AND i.closed_at < ?"
-        date_filter_commits = " AND c.created_at < ?"
+        date_filter_commits = " AND created_at < ?"
         date_params_issues.append(cutoff_date)
         date_params_commits.append(cutoff_date)
     else:
@@ -118,7 +121,7 @@ def _build_single(conn, repo: str, developer: str, cutoff_date: str = None) -> d
 
     # Get resolved issues
     resolved = conn.execute(f"""
-        SELECT i.title, i.body, i.labels, i.closed_at
+        SELECT i.number, i.title, i.body, i.labels, i.closed_at
         FROM issues i
         JOIN issue_pr_links l ON l.repo=i.repo AND l.issue_num=i.number
         WHERE i.repo=? AND l.resolver=? AND i.state='closed' {date_filter_issues}
@@ -130,10 +133,17 @@ def _build_single(conn, repo: str, developer: str, cutoff_date: str = None) -> d
 
     # Aggregate resolved issue text
     resolved_texts_list = []
+    evidence = []
     for r in resolved:
         issue_text = f"{r['title'] or ''} {r['body'] or ''}"
         if issue_text.strip():
             resolved_texts_list.append(issue_text)
+            evidence.append({
+                "issue_num": r["number"],
+                "title": r["title"] or "",
+                "text": issue_text[:2000],
+                "closed_at": r["closed_at"] or "",
+            })
 
     resolved_text = " ".join(resolved_texts_list)[:50000]
 
@@ -185,9 +195,19 @@ def _build_single(conn, repo: str, developer: str, cutoff_date: str = None) -> d
 
     # Current open issue count
     open_count = 0
-    open_issues = conn.execute(
-        "SELECT assignees_json FROM issues WHERE repo=? AND state='open'", (repo,)
-    ).fetchall()
+    if cutoff_date:
+        open_issues = conn.execute(
+            """
+            SELECT assignees_json FROM issues
+            WHERE repo=? AND created_at < ?
+              AND (state='open' OR closed_at IS NULL OR closed_at >= ?)
+            """,
+            (repo, cutoff_date, cutoff_date),
+        ).fetchall()
+    else:
+        open_issues = conn.execute(
+            "SELECT assignees_json FROM issues WHERE repo=? AND state='open'", (repo,)
+        ).fetchall()
     for issue in open_issues:
         try:
             if developer in json.loads(issue["assignees_json"] or "[]"):
@@ -202,6 +222,8 @@ def _build_single(conn, repo: str, developer: str, cutoff_date: str = None) -> d
         "components_json":  json.dumps(components),
         "resolved_text":    resolved_text,
         "resolved_issues_json": resolved_issues_json,
+        "evidence_json": json.dumps(evidence[:100]),
+        "profile_version": 1,
         "last_active":      last_active or "",
         "open_issue_count": open_count,
         "resolved_count":   len(resolved),
@@ -211,13 +233,16 @@ def _save_profile(conn, repo: str, developer: str, profile: dict):
     conn.execute("""
         INSERT INTO developer_profiles
             (username, repo, files_json, components_json, resolved_text,
-             resolved_issues_json, last_active, open_issue_count, resolved_count, updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
+             resolved_issues_json, evidence_json, profile_version,
+             last_active, open_issue_count, resolved_count, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(username, repo) DO UPDATE SET
             files_json=excluded.files_json,
             components_json=excluded.components_json,
             resolved_text=excluded.resolved_text,
             resolved_issues_json=excluded.resolved_issues_json,
+            evidence_json=excluded.evidence_json,
+            profile_version=excluded.profile_version,
             last_active=excluded.last_active,
             open_issue_count=excluded.open_issue_count,
             resolved_count=excluded.resolved_count,
@@ -226,6 +251,7 @@ def _save_profile(conn, repo: str, developer: str, profile: dict):
         developer, repo,
         profile["files_json"], profile["components_json"],
         profile["resolved_text"], profile["resolved_issues_json"],
+        profile["evidence_json"], profile["profile_version"],
         profile["last_active"], profile["open_issue_count"], profile["resolved_count"],
         datetime.now(timezone.utc).isoformat()
     ))

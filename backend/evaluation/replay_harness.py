@@ -130,7 +130,7 @@ def _get_profiles_at_cutoff(repo: str, cutoff_date: str) -> tuple:
     if cache_key in _PROFILE_CACHE:
         return _PROFILE_CACHE[cache_key], True
 
-    profiles = build_profiles(repo, cutoff_date=cutoff_date)
+    profiles = build_profiles(repo, cutoff_date=cutoff_date, persist=False)
     profile_list = list(profiles.values()) if profiles else []
     _PROFILE_CACHE[cache_key] = profile_list
     return profile_list, False

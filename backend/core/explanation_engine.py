@@ -2,6 +2,7 @@
 Generate human-readable per-signal evidence for every recommendation.
 """
 import json
+from core.ai_layer import build_ai_context
 
 def explain(issue: dict, profile: dict, signals: dict) -> dict:
     """
@@ -84,4 +85,5 @@ def explain(issue: dict, profile: dict, signals: dict) -> dict:
         "signals":      evidence,
         "open_issues":  profile.get("open_issue_count", 0),
         "resolved_total": resolved_count,
+        "ai_context": build_ai_context(issue, profile),
     }
