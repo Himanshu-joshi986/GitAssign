@@ -14,6 +14,7 @@ from core.scoring_engine  import (
     file_affinity, recency_score, workload_penalty, ScoringEngine
 )
 from core.explanation_engine import explain
+from core.ai_layer import retrieve_issue_evidence
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -228,6 +229,26 @@ class TestExplanationEngine:
                    "s3_component": 0.5, "s4_file": 0.4, "s5_recency": 0.8, "s6_workload": 0.2}
         result = explain(extracted, sample_profile, signals)
         assert result["final_score"] == pytest.approx(0.77)
+
+class TestAiLayer:
+    def test_retrieves_similar_historical_issue(self, sample_issue):
+        profile = {
+            "evidence_json": json.dumps([
+                {"issue_num": 10, "title": "Pool timeout", "text": "connection pool timeout under load"},
+                {"issue_num": 11, "title": "Dark mode", "text": "user interface theme preferences"},
+            ])
+        }
+        result = retrieve_issue_evidence(
+            {"text": "connection pool timeout during load"},
+            profile,
+            top_k=1,
+        )
+        assert len(result) == 1
+        assert result[0]["issue_num"] == 10
+        assert result[0]["similarity"] > 0
+
+    def test_empty_evidence_is_safe(self, sample_issue):
+        assert retrieve_issue_evidence(sample_issue, {"evidence_json": "[]"}) == []
 
 # ── Run ───────────────────────────────────────────────────────────────────────
 

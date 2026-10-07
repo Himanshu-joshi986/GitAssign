@@ -52,6 +52,8 @@ def init_db():
         conn.executescript(f.read())
     # Migrations: add columns that may be missing from older DBs
     _migrate_add_column(conn, "developer_profiles", "resolved_issues_json", "TEXT")
+    _migrate_add_column(conn, "developer_profiles", "evidence_json", "TEXT")
+    _migrate_add_column(conn, "developer_profiles", "profile_version", "INTEGER DEFAULT 1")
     _migrate_add_column(conn, "issues", "assignees_json", "TEXT DEFAULT '[]'")
     conn.commit()
     conn.close()

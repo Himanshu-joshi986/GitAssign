@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS developer_profiles (
     components_json     TEXT,  -- {"label": count}
     resolved_text       TEXT,  -- concatenated resolved issue text
     resolved_issues_json TEXT, -- JSON array of individual resolved issue texts
+    evidence_json       TEXT,  -- historical issue evidence for semantic retrieval
+    profile_version     INTEGER DEFAULT 1,
     last_active         TEXT,
     open_issue_count    INTEGER DEFAULT 0,
     resolved_count      INTEGER DEFAULT 0,
@@ -109,3 +111,9 @@ CREATE INDEX IF NOT EXISTS idx_issues_repo_state_created
 
 CREATE INDEX IF NOT EXISTS idx_issues_repo_number
     ON issues(repo, number);
+
+CREATE INDEX IF NOT EXISTS idx_issue_links_repo_resolver_issue
+    ON issue_pr_links(repo, resolver, issue_num);
+
+CREATE INDEX IF NOT EXISTS idx_commits_repo_author_created
+    ON commits(repo, author, created_at DESC);
