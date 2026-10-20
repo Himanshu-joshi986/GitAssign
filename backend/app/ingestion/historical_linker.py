@@ -20,35 +20,46 @@ def link_via_pr_bodies(repo: str):
     """Strategy 1 — scan PR body text for 'Closes #X'.
 
     The resolver is the PR *author* (who did the work), not the merger.
-    merged_by is only a fallback when the author is missing.
+    merged_by is only a fallback when the author is missing. Existing rows
+    are upserted so links created by older versions (resolver = merger or
+    NULL) are repaired on re-run.
     """
     conn = get_conn()
     prs = conn.execute(
         "SELECT number, body, author, merged_by, merged_at FROM pull_requests WHERE repo=? AND merged_at IS NOT NULL",
         (repo,)
     ).fetchall()
-    linked = 0
+    created = repaired = 0
     for pr in prs:
         resolver = pr["author"] or pr["merged_by"]
         refs = _extract_issue_refs(pr["body"] or "")
         for issue_num in refs:
             try:
+                existing = conn.execute(
+                    "SELECT resolver FROM issue_pr_links WHERE repo=? AND issue_num=? AND pr_num=?",
+                    (repo, issue_num, pr["number"])
+                ).fetchone()
                 conn.execute("""
-                    INSERT OR IGNORE INTO issue_pr_links (repo, issue_num, pr_num, link_type, resolver)
+                    INSERT INTO issue_pr_links (repo, issue_num, pr_num, link_type, resolver)
                     VALUES (?,?,?,?,?)
+                    ON CONFLICT(repo, issue_num, pr_num) DO UPDATE SET
+                        resolver=excluded.resolver
                 """, (repo, issue_num, pr["number"], "body_keyword", resolver))
+                if existing is None:
+                    created += 1
+                elif (existing["resolver"] or "") != (resolver or ""):
+                    repaired += 1
                 if resolver:
                     conn.execute(
                         "INSERT OR IGNORE INTO developers (username, display_name) VALUES (?,?)",
                         (resolver, resolver)
                     )
-                linked += 1
             except Exception:
                 pass
     conn.commit()
     conn.close()
-    print(f"  [linker] strategy 1 (PR body): {linked} links for {repo}")
-    return linked
+    print(f"  [linker] strategy 1 (PR body): {created} links, {repaired} repaired for {repo}")
+    return created + repaired
 
 def link_via_timeline(repo: str, max_issues: int = 200):
     """Strategy 2 — GitHub timeline events."""

@@ -104,6 +104,22 @@ def build_profiles(repo: str, cutoff_date: str = None, persist: bool = True):
                 _save_profile(conn, repo, dev, profile)
 
     if persist:
+        # Prune stale profiles: contributors who no longer qualify (no commits,
+        # no resolved issues) must not keep polluting rankings forever.
+        stale = conn.execute(
+            "SELECT username FROM developer_profiles WHERE repo=?", (repo,)
+        ).fetchall()
+        kept = set(profiles)
+        pruned = 0
+        for row in stale:
+            if row["username"] not in kept:
+                conn.execute(
+                    "DELETE FROM developer_profiles WHERE repo=? AND username=?",
+                    (repo, row["username"]),
+                )
+                pruned += 1
+        if pruned:
+            print(f"[profiles] pruned {pruned} stale profiles for {repo}")
         conn.commit()
     conn.close()
     print(f"[profiles] built {len(profiles)} profiles for {repo}")
