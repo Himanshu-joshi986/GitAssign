@@ -5,7 +5,7 @@ import os, json, time, base64, hashlib, requests
 from pathlib import Path
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
-_BACKEND_DIR = Path(__file__).resolve().parent.parent
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
 _PROJECT_ROOT = _BACKEND_DIR.parent
 
 

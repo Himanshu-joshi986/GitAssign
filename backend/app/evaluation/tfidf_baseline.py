@@ -5,7 +5,7 @@ No file/component/recency/workload signals. Simplest possible matcher.
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
-from db.init_db import get_conn
+from app.db.init_db import get_conn
 
 def build_baseline(repo: str, cutoff_date: str = None):
     """

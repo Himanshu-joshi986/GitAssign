@@ -12,7 +12,7 @@ def _resolve_weights_path() -> str:
     raw = os.environ.get("WEIGHTS_PATH", "config/weights.json")
     if os.path.isabs(raw) and os.path.exists(raw):
         return raw
-    backend = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    backend = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     candidate = os.path.join(backend, raw if not os.path.isabs(raw) else os.path.basename(raw))
     if os.path.exists(candidate):
         return candidate

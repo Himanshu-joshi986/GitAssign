@@ -2,12 +2,13 @@
 
 No evaluation has been run yet.
 
-After loading a dataset (e.g. Eclipse JDT) and building profiles, run:
+After loading a dataset (for example Eclipse JDT) and building developer
+profiles, run the ablation study from the dashboard (**Metrics → Run
+Ablation**) or from the CLI:
 
 ```bash
-# Via dashboard: Metrics tab → Run Ablation
-# Or CLI:
-docker-compose exec backend python evaluation/ablation_runner.py eclipse/jdt 2009-01-01 2010-01-01 200
+docker compose exec backend python -m app.evaluation.ablation_runner \
+    eclipse/jdt 2009-01-01 2010-01-01 200
 ```
 
-Results will appear in this file and in the Metrics tab.
+Results are written back to this file and shown in the Metrics tab.

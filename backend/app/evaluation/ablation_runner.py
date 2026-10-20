@@ -5,9 +5,9 @@ Results are saved to docs/results.md
 """
 import json, os
 from pathlib import Path
-from evaluation.replay_harness import run_replay
+from app.evaluation.replay_harness import run_replay
 
-_BACKEND_DIR = Path(__file__).resolve().parent.parent
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
 _PROJECT_ROOT = _BACKEND_DIR.parent
 
 

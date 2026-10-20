@@ -1,34 +1,47 @@
-services:
+name: gitassign
 
+services:
   backend:
-    build: ./backend
-    container_name: gitassign_backend
+    build:
+      context: ./backend
+    image: gitassign/backend:latest
     ports:
       - "8000:8000"
     volumes:
-      - ./data:/app/data          # persistent cache + SQLite DB
-      - ./docs:/app/docs          # ablation results written here
-      - ./backend/config:/app/config
+      - ./data:/app/data                     # persistent SQLite DB + GitHub cache
+      - ./datasets:/app/datasets:ro          # local CSV datasets (read-only)
+      - ./docs:/app/docs                     # ablation results are written here
+      - ./backend/config:/app/config         # tune weights without rebuilding
     environment:
-      - DB_PATH=data/gitassign.db
-      - CACHE_DIR=data/cache
-      - WEIGHTS_PATH=config/weights.json
-      - GITHUB_TOKEN=${GITHUB_TOKEN:-}   # optional — set in .env for higher rate limits
+      DB_PATH: data/gitassign.db
+      CACHE_DIR: data/cache
+      WEIGHTS_PATH: config/weights.json
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      MAX_COMMIT_DETAILS: ${MAX_COMMIT_DETAILS:-200}
+      LIVE_SYNC_INTERVAL_SECONDS: ${LIVE_SYNC_INTERVAL_SECONDS:-60}
+      AUTO_ASSIGN_NEW_ISSUES: ${AUTO_ASSIGN_NEW_ISSUES:-false}
+      AUTO_ASSIGN_CAPACITY: ${AUTO_ASSIGN_CAPACITY:-3}
+      AUTO_NOTIFY_DEVELOPER: ${AUTO_NOTIFY_DEVELOPER:-false}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
+      start_period: 20s
       retries: 3
 
   frontend:
-    build: ./frontend
-    container_name: gitassign_frontend
+    build:
+      context: ./frontend
+    image: gitassign/frontend:latest
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped
-
-volumes:
-  gitassign_data:
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

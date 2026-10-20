@@ -3,7 +3,7 @@ Build and store per-developer expertise profiles from repository history.
 """
 import json, re
 from datetime import datetime, timezone
-from db.init_db import get_conn
+from app.db.init_db import get_conn
 
 
 def _normalise_date(s: str) -> str:

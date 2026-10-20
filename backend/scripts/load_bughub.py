@@ -3,8 +3,8 @@ Load Eclipse JDT or Mozilla bugs from logpai/bughub CSV into GitAssign DB.
 Download: https://github.com/logpai/bughub
 
 Usage:
-    python scripts/load_bughub.py data/eclipse_jdt_clean.csv eclipse/jdt
-    python scripts/load_bughub.py data/mozilla_firefox_clean.csv mozilla/firefox
+    python scripts/load_bughub.py ../datasets/eclipse_jdt.csv eclipse/jdt
+    python scripts/load_bughub.py ../datasets/mozilla_firefox.csv mozilla/firefox
 
 If the CSV has no fixer/assignee column (e.g. some bughub versions),
 developers are SYNTHESIZED from the Component column — each component
@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from db.init_db import get_conn, init_db
+from app.db.init_db import get_conn, init_db
 
 MIN_BUGS_PER_DEV = 5  # Lowered from 10 — component pseudo-devs cluster tightly
 

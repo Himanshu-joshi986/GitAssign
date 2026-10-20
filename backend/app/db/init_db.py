@@ -2,8 +2,8 @@ import sqlite3
 import os
 from pathlib import Path
 
-# backend/ directory (parent of db/)
-_BACKEND_DIR = Path(__file__).resolve().parent.parent
+# backend/ directory (three levels up from app/db/init_db.py)
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
 # project root (parent of backend/) — exists in local monorepo; absent in flat Docker image
 _PROJECT_ROOT = _BACKEND_DIR.parent
 

@@ -3,11 +3,11 @@ Workload-aware greedy batch assignment.
 Assigns issues to developers respecting per-developer capacity limits.
 """
 import json
-from core.scoring_engine import get_engine
-from core.priority_mapper import prioritise_batch
-from core.profile_builder import load_profiles
-from core.issue_extractor import extract
-from core.explanation_engine import explain
+from app.core.scoring_engine import get_engine
+from app.core.priority_mapper import prioritise_batch
+from app.core.profile_builder import load_profiles
+from app.core.issue_extractor import extract
+from app.core.explanation_engine import explain
 
 def assign_batch(issues: list, repo: str, capacity: int = 3) -> list:
     """

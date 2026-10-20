@@ -7,14 +7,14 @@ import sys, os, json, pytest
 # Make sure backend modules are on path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from core.issue_extractor import extract
-from core.priority_mapper import map_priority
-from core.scoring_engine  import (
+from app.core.issue_extractor import extract
+from app.core.priority_mapper import map_priority
+from app.core.scoring_engine  import (
     text_similarity, component_overlap,
     file_affinity, recency_score, workload_penalty, ScoringEngine
 )
-from core.explanation_engine import explain
-from core.ai_layer import retrieve_issue_evidence
+from app.core.explanation_engine import explain
+from app.core.ai_layer import retrieve_issue_evidence
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

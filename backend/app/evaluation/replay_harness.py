@@ -9,10 +9,10 @@ For each test issue:
 """
 import json
 from datetime import datetime
-from db.init_db import get_conn
-from core.issue_extractor import extract
-from core.profile_builder import build_profiles, load_profiles
-from core.scoring_engine import ScoringEngine
+from app.db.init_db import get_conn
+from app.core.issue_extractor import extract
+from app.core.profile_builder import build_profiles, load_profiles
+from app.core.scoring_engine import ScoringEngine
 
 # In-memory cache for profiles at specific cutoff dates
 # Key: (repo, cutoff_date) -> list of profile dicts

@@ -3,7 +3,7 @@ Load fetched GitHub data from cache into the database.
 """
 import json
 from datetime import datetime
-from db.init_db import get_conn
+from app.db.init_db import get_conn
 
 def upsert_issues(repo: str, issues: list):
     conn = get_conn()
@@ -120,7 +120,7 @@ def upsert_developer(username: str, display_name: str = ""):
 
 def load_repo(repo: str):
     """Load all cached data for a repo into the database."""
-    from ingestion.github_fetcher import fetch_issues, fetch_pull_requests, fetch_commits
+    from app.ingestion.github_fetcher import fetch_issues, fetch_pull_requests, fetch_commits
     print(f"[load] ingesting {repo}")
     issues = fetch_issues(repo)
     prs = fetch_pull_requests(repo)

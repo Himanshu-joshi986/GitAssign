@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 load_dotenv()  # also cwd .env
 
 from contextlib import asynccontextmanager
@@ -17,14 +17,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 
-from db.init_db import init_db, get_conn
-from ingestion.db_loader import load_repo
-from ingestion.historical_linker import run_all_strategies
-from core.issue_extractor import extract
-from core.priority_mapper import prioritise_batch, map_priority
-from core.profile_builder import build_profiles, load_profiles, load_profile
-from core.assignment_engine import assign_batch, get_single_recommendation
-from evaluation.ablation_runner import run_ablation, get_latest_results
+from app.db.init_db import init_db, get_conn
+from app.ingestion.db_loader import load_repo
+from app.ingestion.historical_linker import run_all_strategies
+from app.core.issue_extractor import extract
+from app.core.priority_mapper import prioritise_batch, map_priority
+from app.core.profile_builder import build_profiles, load_profiles, load_profile
+from app.core.assignment_engine import assign_batch, get_single_recommendation
+from app.evaluation.ablation_runner import run_ablation, get_latest_results
 
 LIVE_SYNC_INTERVAL = max(float(os.environ.get("LIVE_SYNC_INTERVAL_SECONDS", "60")), 0)
 # GitHub writes stay opt-in. Preview and explicit Apply remain the default flow.
@@ -45,8 +45,8 @@ async def lifespan(app: FastAPI):
 
 
 def _sync_open_issues(repo: str):
-    from ingestion.github_fetcher import fetch_issues, fetch_contributors
-    from ingestion.db_loader import upsert_issues, upsert_repository_developers
+    from app.ingestion.github_fetcher import fetch_issues, fetch_contributors
+    from app.ingestion.db_loader import upsert_issues, upsert_repository_developers
 
     issues = fetch_issues(repo, state="open", force_refresh=True)
     upsert_issues(repo, issues)
@@ -69,7 +69,7 @@ def _set_pipeline_status(repo: str, status: str, message: str, **extra):
 
 def _auto_assign_open_issues(repo: str):
     """Assign every currently unassigned open issue once it has a profile candidate."""
-    from ingestion.github_fetcher import GITHUB_TOKEN
+    from app.ingestion.github_fetcher import GITHUB_TOKEN
     if not GITHUB_TOKEN:
         print(f"[auto-assign] {repo}: skipped because GITHUB_TOKEN is not configured")
         return 0
@@ -253,7 +253,7 @@ def demo_scan(req: DemoScanRequest):
 
 def _scan_ingested_source(repo: str) -> int:
     """Scan fetched repository source files and add marked bugs to the queue."""
-    from ingestion.github_fetcher import fetch_source_files
+    from app.ingestion.github_fetcher import fetch_source_files
     found = 0
     for source in fetch_source_files(repo, max_files=int(os.environ.get("MAX_SOURCE_SCAN_FILES", "25"))):
         result = demo_scan(DemoScanRequest(repo=repo, filename=source["path"], content=source["content"]))
@@ -387,7 +387,7 @@ def apply_batch(req: ApplyBatchRequest):
             "total": len(issues), "repo": req.repo}
 
 def _apply_assignments(repo: str, issues: list, proposed: list, notify: bool = True):
-    from ingestion.github_fetcher import assign_issue, comment_issue
+    from app.ingestion.github_fetcher import assign_issue, comment_issue
 
     by_num = {a.get("issue_num"): a for a in proposed}
     results = []
@@ -469,9 +469,9 @@ async def ingest(req: IngestRequest, bg: BackgroundTasks):
 
     def _run():
         try:
-            from ingestion.github_fetcher import fetch_issues, fetch_pull_requests, fetch_commits
-            from ingestion.github_fetcher import fetch_contributors
-            from ingestion.db_loader import (upsert_issues, upsert_pull_requests, upsert_commits,
+            from app.ingestion.github_fetcher import fetch_issues, fetch_pull_requests, fetch_commits
+            from app.ingestion.github_fetcher import fetch_contributors
+            from app.ingestion.db_loader import (upsert_issues, upsert_pull_requests, upsert_commits,
                                              upsert_repository_developers)
             print(f"[ingest] starting {req.repo}")
             _set_pipeline_status(req.repo, "running", "Fetching issues, pull requests, and commits")
@@ -549,7 +549,7 @@ def remove_repo(repo: str):
     conn.commit()
     conn.close()
     _pipeline_status.pop(repo, None)
-    from ingestion.github_fetcher import CACHE_DIR
+    from app.ingestion.github_fetcher import CACHE_DIR
     import shutil
     cache_path = Path(CACHE_DIR) / repo.replace("/", "__")
     if cache_path.exists():
@@ -557,10 +557,10 @@ def remove_repo(repo: str):
     return {"status": "removed", "repo": repo}
 
 # ── Serve frontend static files ───────────────────────────────────────────────
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 if os.path.exists(STATIC_DIR):
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

@@ -8,12 +8,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ["DB_PATH"] = "data/test_gitassign.db"
 
 from fastapi.testclient import TestClient
-from db.init_db import init_db
+from app.db.init_db import init_db
 
 # Init a fresh test DB
 init_db()
 
-from main import app
+from app.main import app
 
 client = TestClient(app)
 
@@ -92,7 +92,7 @@ def test_batch_assign_no_issues():
     assert r.status_code == 404
 
 def test_batch_assign_rejects_closed_issue():
-    conn = __import__("db.init_db", fromlist=["get_conn"]).get_conn()
+    conn = __import__("app.db.init_db", fromlist=["get_conn"]).get_conn()
     conn.execute("""
         INSERT OR REPLACE INTO issues
         (repo, number, title, body, state, labels, assignees_json)

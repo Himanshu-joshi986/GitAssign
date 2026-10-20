@@ -4,7 +4,7 @@ Three strategies: PR body keywords, GitHub timeline, commit messages.
 """
 import re
 import json
-from db.init_db import get_conn
+from app.db.init_db import get_conn
 
 CLOSE_PATTERNS = re.compile(
     r'(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*#(\d+)',
@@ -47,7 +47,7 @@ def link_via_pr_bodies(repo: str):
 
 def link_via_timeline(repo: str, max_issues: int = 200):
     """Strategy 2 — GitHub timeline events."""
-    from ingestion.github_fetcher import fetch_issue_timeline
+    from app.ingestion.github_fetcher import fetch_issue_timeline
     conn = get_conn()
     issues = conn.execute(
         "SELECT number FROM issues WHERE repo=? AND state='closed' LIMIT ?",
