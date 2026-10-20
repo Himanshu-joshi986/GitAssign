@@ -15,6 +15,15 @@ export interface Issue {
     factors: string[]
     color: string
   }
+  classification?: IssueClassification
+}
+
+export interface IssueClassification {
+  kind: string
+  domains: { name: string; confidence?: number }[]
+  difficulty: number
+  severity: string
+  summary: string
 }
 
 export interface SignalDetail {
@@ -32,11 +41,15 @@ export interface Recommendation {
   s4_file: number
   s5_recency: number
   s6_workload: number
+  s7_domain?: number
+  domains?: { name: string; weight: number }[]
+  domain_summary?: string
   explanation: {
     summary: string
     signals: Record<string, SignalDetail>
     open_issues: number
     resolved_total: number
+    matched_domains?: string[]
   }
 }
 
@@ -80,6 +93,8 @@ export interface Developer {
   resolved_count: number
   open_issues: number
   last_active: string
+  domains?: string[]
+  domain_summary?: string
 }
 
 export const api = createApi({
@@ -116,6 +131,7 @@ export const api = createApi({
         issue_author: string
         issue_labels: string[]
         priority: Issue['priority']
+        classification: IssueClassification
       },
       { repo: string; issueNum: number }
     >({
@@ -153,8 +169,24 @@ export const api = createApi({
     getPipelineStatus: builder.query<{
       repo: string; status: 'idle' | 'queued' | 'running' | 'completed' | 'failed'
       message: string; updated_at?: string; issues?: number; contributors?: number
+      classified?: number; domain_profiles?: number; llm_enabled?: boolean
     }, string>({
       query: (repo) => `/pipeline/status?repo=${encodeURIComponent(repo)}`,
+    }),
+
+    analyzeRepo: builder.mutation<{ status: string; repo: string; llm_enabled: boolean }, {
+      repo: string; force?: boolean; max_issues?: number
+    }>({
+      query: (body) => ({ url: '/pipeline/analyze', method: 'POST', body }),
+      invalidatesTags: ['Issues', 'Profiles'],
+    }),
+
+    getAiStatus: builder.query<{
+      llm_enabled: boolean; model: string; repo?: string; open_issues: number
+      classified: number; missing: number; domain_profiles: number
+    }, string>({
+      query: (repo) => `/ai/status?repo=${encodeURIComponent(repo)}`,
+      providesTags: ['Issues', 'Profiles'],
     }),
 
     demoScan: builder.mutation<{
@@ -195,6 +227,8 @@ export const {
   useApplyBatchAssignMutation,
   useGetMetricsQuery,
   useGetPipelineStatusQuery,
+  useAnalyzeRepoMutation,
+  useGetAiStatusQuery,
   useDemoScanMutation,
   useRunEvaluationMutation,
   useIngestRepoMutation,

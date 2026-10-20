@@ -35,6 +35,9 @@ export interface PipelineState {
   message: string
   issues?: number
   contributors?: number
+  classified?: number
+  domain_profiles?: number
+  llm_enabled?: boolean
 }
 
 interface SidebarProps {
@@ -108,12 +111,15 @@ function PipelineCard({ pipeline }: { pipeline: PipelineState }) {
       </div>
       <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{pipeline.message}</p>
       {spinning && <Progress value={62} className="mt-2 h-1" indicatorClassName="animate-pulse" />}
-      {(pipeline.issues !== undefined || pipeline.contributors !== undefined) && (
+      {(pipeline.issues !== undefined || pipeline.contributors !== undefined || pipeline.classified !== undefined || pipeline.domain_profiles !== undefined) && (
         <div className="mt-2 flex items-center gap-3 text-[10px] text-muted-foreground">
           {pipeline.issues !== undefined && <span>{pipeline.issues.toLocaleString()} issues</span>}
           {pipeline.contributors !== undefined && <span>{pipeline.contributors} contributors</span>}
+          {pipeline.classified !== undefined && <span>{pipeline.classified} classified</span>}
+          {pipeline.domain_profiles !== undefined && <span>{pipeline.domain_profiles} domain profiles</span>}
         </div>
       )}
+      {pipeline.llm_enabled === false && <p className="mt-2 text-[10px] text-amber-300">LLM disabled · heuristic mode</p>}
     </motion.div>
   )
 }

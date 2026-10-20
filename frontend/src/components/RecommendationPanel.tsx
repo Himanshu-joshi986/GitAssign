@@ -45,6 +45,7 @@ const SIGNAL_META: Record<
   file_affinity: { label: 'File affinity', icon: FileCode2, bar: 'bg-amber-400', text: 'text-amber-400' },
   recency: { label: 'Recency', icon: Clock3, bar: 'bg-cyan-400', text: 'text-cyan-400' },
   workload: { label: 'Workload', icon: Gauge, bar: 'bg-rose-400', text: 'text-rose-400' },
+  domain: { label: 'Domain fit', icon: Sparkles, bar: 'bg-fuchsia-400', text: 'text-fuchsia-400' },
 }
 
 function Disclosure({ open, children }: { open: boolean; children: ReactNode }) {
@@ -115,6 +116,9 @@ function DeveloperCard({ rec, rank }: { rec: Recommendation; rank: number }) {
               <UserRound className="size-3 text-sky-400" />
               {explanation?.open_issues ?? 0} open
             </span>
+            {(rec.domains ?? []).slice(0, 3).map(domain => (
+              <Badge key={domain.name} variant="outline" className="text-[9px]">{domain.name}</Badge>
+            ))}
           </div>
         </div>
 
@@ -230,6 +234,7 @@ export default function RecommendationPanel() {
 
   const recommendations = data?.recommendations ?? []
   const priority = data?.priority
+  const classification = data?.classification
   const priorityStyle = priorityMeta(priority?.tier)
   const githubUrl = `https://github.com/${repo}/issues/${issueNum}`
 
@@ -253,6 +258,8 @@ export default function RecommendationPanel() {
               {data.issue_state}
             </Badge>
           )}
+          {classification && <Badge variant="outline" className="capitalize">{classification.kind}</Badge>}
+          {classification && <Badge variant="muted" className="capitalize">{classification.severity}</Badge>}
           {priority && (
             <span className="font-mono text-[10px] text-muted-foreground">priority score {priority.score}</span>
           )}
@@ -269,6 +276,13 @@ export default function RecommendationPanel() {
         </div>
 
         <h2 className="mt-2 text-base font-semibold leading-snug tracking-tight">{data?.issue_title}</h2>
+
+        {classification?.domains?.length ? (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {classification.domains.map(domain => <Badge key={domain.name} variant="outline">{domain.name}</Badge>)}
+            {classification.summary && <span className="ml-1 text-[10px] text-muted-foreground">{classification.summary}</span>}
+          </div>
+        ) : null}
 
         {data?.issue_labels && data.issue_labels.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">

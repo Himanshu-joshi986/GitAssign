@@ -5,13 +5,14 @@ import {
   Clock3,
   RefreshCw,
   Search,
+  Sparkles,
   Settings2,
   UserRound,
   Users,
 } from 'lucide-react'
 import { useAppSelector } from '../store/hooks'
 import { selectActiveRepo } from '../store/uiSlice'
-import { useBuildProfilesMutation, useGetDevelopersQuery } from '../store/apiSlice'
+import { useAnalyzeRepoMutation, useBuildProfilesMutation, useGetDevelopersQuery } from '../store/apiSlice'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
@@ -34,6 +35,7 @@ export default function DeveloperList() {
   const repo = useAppSelector(selectActiveRepo)
   const { data, isLoading, isFetching, refetch } = useGetDevelopersQuery(repo, { skip: !repo })
   const [buildProfiles, { isLoading: building }] = useBuildProfilesMutation()
+  const [analyzeRepo, { isLoading: analyzing }] = useAnalyzeRepoMutation()
   const [query, setQuery] = useState('')
 
   const developers = data?.developers ?? []
@@ -52,6 +54,11 @@ export default function DeveloperList() {
     refetch()
   }
 
+  async function handleAnalyze() {
+    await analyzeRepo({ repo }).unwrap()
+    refetch()
+  }
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-[1400px] space-y-5 p-4 sm:p-6">
@@ -67,7 +74,7 @@ export default function DeveloperList() {
               rank candidates for every new issue.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw className={cn(isFetching && 'animate-spin')} />
               Refresh
@@ -75,6 +82,10 @@ export default function DeveloperList() {
             <Button size="sm" onClick={handleBuild} disabled={building || !repo}>
               {building ? <RefreshCw className="animate-spin" /> : <Settings2 />}
               {building ? 'Building…' : 'Build profiles'}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={handleAnalyze} disabled={analyzing || !repo}>
+              {analyzing ? <RefreshCw className="animate-spin" /> : <Sparkles />}
+              {analyzing ? 'Analyzing…' : 'AI analyze'}
             </Button>
           </div>
         </div>
@@ -190,6 +201,20 @@ export default function DeveloperList() {
                         </div>
                         <div className="text-[9px] uppercase tracking-[0.1em] text-muted-foreground">Open</div>
                       </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <div className="mb-1 text-[9px] uppercase tracking-[0.1em] text-muted-foreground">AI domains</div>
+                      {developer.domains?.length ? (
+                        <div className="flex flex-wrap gap-1">
+                          {developer.domains.slice(0, 3).map(domain => (
+                            <Badge key={domain} variant="outline" className="text-[10px]">{domain}</Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground">Not analyzed yet</span>
+                      )}
+                      {developer.domain_summary && <p className="mt-1 line-clamp-2 text-[10px] text-muted-foreground">{developer.domain_summary}</p>}
                     </div>
 
                     <div className="mt-3 space-y-1">

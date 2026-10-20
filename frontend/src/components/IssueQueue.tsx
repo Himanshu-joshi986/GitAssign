@@ -217,6 +217,7 @@ export default function IssueQueue() {
                       <div className="mb-1 flex items-center gap-1.5">
                         <Badge variant={meta.badge}>{tier}</Badge>
                         <span className="font-mono text-[10px] text-muted-foreground">#{issue.number}</span>
+                        {issue.classification?.kind && <Badge variant="outline" className="capitalize">{issue.classification.kind}</Badge>}
                         <span
                           className={cn(
                             'ml-auto inline-flex items-center gap-1 text-[10px]',
