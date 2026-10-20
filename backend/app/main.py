@@ -24,6 +24,7 @@ from app.core.issue_extractor import extract
 from app.core.priority_mapper import prioritise_batch, map_priority
 from app.core.profile_builder import build_profiles, load_profiles, load_profile
 from app.core.assignment_engine import assign_batch, get_single_recommendation
+from app.core import llm_client
 from app.evaluation.ablation_runner import run_ablation, get_latest_results
 
 LIVE_SYNC_INTERVAL = max(float(os.environ.get("LIVE_SYNC_INTERVAL_SECONDS", "60")), 0)
@@ -44,6 +45,15 @@ async def lifespan(app: FastAPI):
         await asyncio.gather(sync_task, return_exceptions=True)
 
 
+def _analyze_repo(repo: str, force: bool = False, max_issues: int = None) -> dict:
+    """LLM classification + cached domain profiles for one repo."""
+    from app.core.issue_classifier import classify_open_issues
+    from app.core.domain_profiler import build_domain_profiles
+    classified = classify_open_issues(repo, force=force, limit=max_issues)
+    domains = build_domain_profiles(repo, force=force)
+    return {**classified, **domains}
+
+
 def _sync_open_issues(repo: str):
     from app.ingestion.github_fetcher import fetch_issues, fetch_contributors
     from app.ingestion.db_loader import upsert_issues, upsert_repository_developers
@@ -53,6 +63,12 @@ def _sync_open_issues(repo: str):
     contributors = fetch_contributors(repo)
     upsert_repository_developers(repo, contributors)
     build_profiles(repo)
+    # The issue classifier only calls the LLM for new or edited issues, so a
+    # 60s poll is safe. Domain profiles skip every existing cached row.
+    try:
+        _analyze_repo(repo)
+    except Exception as exc:
+        print(f"[live-sync] {repo} analysis failed: {exc}")
     if AUTO_ASSIGN_NEW_ISSUES:
         _auto_assign_open_issues(repo)
     return len(issues)
@@ -275,6 +291,14 @@ def get_issues(repo: str, state: str = "all", limit: int = 100):
     for i, e in enumerate(extracted):
         e["state"] = raw[i].get("state", "")
     prioritised = prioritise_batch(extracted)
+    # Attach cached classifications only — a list request must never
+    # trigger an LLM call.
+    from app.core.issue_classifier import load_classifications
+    cls_all = load_classifications(repo)
+    for issue in prioritised:
+        cached = cls_all.get(issue.get("number"))
+        if cached:
+            issue["classification"] = cached
     return {"issues": prioritised, "repo": repo, "total": len(prioritised)}
 
 @app.get("/api/issues/{issue_num}/recommendations")
@@ -291,6 +315,8 @@ def get_recommendations(repo: str, issue_num: int, top_k: int = 5):
     issue_dict = dict(row)
     recommendations = get_single_recommendation(issue_dict, repo, top_k=top_k)
     priority = map_priority(extract(issue_dict))
+    from app.core.issue_classifier import load_classifications
+    classification = load_classifications(repo).get(issue_num, {})
 
     return {
         "issue_num":       issue_num,
@@ -302,6 +328,7 @@ def get_recommendations(repo: str, issue_num: int, top_k: int = 5):
         "issue_author":    issue_dict.get("author", ""),
         "issue_labels":    json.loads(issue_dict.get("labels") or "[]"),
         "priority":        priority,
+        "classification":  classification,
         "recommendations": recommendations,
         "repo":            repo,
     }
@@ -312,6 +339,8 @@ def get_recommendations(repo: str, issue_num: int, top_k: int = 5):
 def list_developers(repo: str):
     """List all developers with profiles for a repo."""
     profiles = load_profiles(repo)
+    from app.core.domain_profiler import load_domain_profiles
+    domain_map = load_domain_profiles(repo)
     return {
         "developers": [
             {
@@ -319,6 +348,8 @@ def list_developers(repo: str):
                 "resolved_count": p.get("resolved_count", 0),
                 "open_issues":   p.get("open_issue_count", 0),
                 "last_active":   p.get("last_active", ""),
+                "domains":       [d.get("name", "") for d in domain_map.get(p["username"], {}).get("domains", [])[:3]],
+                "domain_summary": (domain_map.get(p["username"], {}).get("summary") or "")[:200],
             }
             for p in sorted(profiles, key=lambda x: x.get("resolved_count", 0), reverse=True)
         ],
@@ -328,7 +359,7 @@ def list_developers(repo: str):
 
 @app.get("/api/developers/{username}/profile")
 def get_developer_profile(repo: str, username: str):
-    """Full developer profile."""
+    """Full developer profile, including the cached AI domain profile."""
     profile = load_profile(repo, username)
     if not profile:
         raise HTTPException(status_code=404, detail=f"No profile for {username} in {repo}")
@@ -337,6 +368,15 @@ def get_developer_profile(repo: str, username: str):
         profile["components"] = json.loads(profile.get("components_json") or "{}")
     except Exception:
         pass
+    from app.core.domain_profiler import load_domain_profiles
+    ai_domains = load_domain_profiles(repo).get(username)
+    profile["ai_domains"] = {
+        "domains": ai_domains.get("domains", []) if ai_domains else [],
+        "preferred_kinds": ai_domains.get("preferred_kinds", []) if ai_domains else [],
+        "summary": ai_domains.get("summary", "") if ai_domains else "",
+        "model": ai_domains.get("model", "") if ai_domains else "",
+        "built_at": ai_domains.get("built_at", "") if ai_domains else "",
+    }
     return profile
 
 # -- Assignment ---------------------------------------------------------------
@@ -487,14 +527,34 @@ async def ingest(req: IngestRequest, bg: BackgroundTasks):
             _set_pipeline_status(req.repo, "running", "Linking historical issues and building profiles")
             run_all_strategies(req.repo)
             build_profiles(req.repo)
+            _set_pipeline_status(
+                req.repo, "running",
+                "Classifying issues and building AI domain profiles",
+                llm_enabled=llm_client.is_enabled(),
+            )
+            analysis = {
+                "classified": 0, "failed": 0,
+                "built": 0, "heuristic": 0, "domain_profiles": 0,
+                "llm_calls": 0,
+            }
+            try:
+                analysis = _analyze_repo(req.repo)
+            except Exception as exc:
+                print(f"[ingest] analysis failed {req.repo}: {exc}")
+            _set_pipeline_status(req.repo, "running", "Scanning ingested source for demo bugs")
             scanned = _scan_ingested_source(req.repo)
             _set_pipeline_status(
                 req.repo,
                 "completed",
                 "Repository is ready",
                 issues=len(historical) + len(current) + scanned,
+                open_issues=len(current),
                 contributors=len(contributors),
                 scanned_bugs=scanned,
+                classified=analysis.get("classified", 0),
+                domain_profiles=analysis.get("built", 0) + analysis.get("heuristic", 0),
+                llm_calls=analysis.get("llm_calls", 0),
+                llm_enabled=llm_client.is_enabled(),
             )
             print(f"[ingest] done {req.repo}: {len(historical) + len(current)} issues, {len(contributors)} contributors")
         except Exception as exc:
@@ -512,6 +572,75 @@ def pipeline_status(repo: str):
         "status": "idle",
         "message": "No pipeline run yet",
     })
+
+class AnalyzeRequest(BaseModel):
+    repo: str
+    force: bool = False
+    max_issues: Optional[int] = None
+
+@app.post("/api/pipeline/analyze")
+def analyze_endpoint(req: AnalyzeRequest, bg: BackgroundTasks):
+    """Re-run AI triage: classify open issues and build domain profiles (cached, cheap)."""
+    repo = req.repo.strip()
+    _set_pipeline_status(repo, "queued", "Preparing AI analysis", llm_enabled=llm_client.is_enabled())
+
+    def _run():
+        try:
+            _set_pipeline_status(
+                repo, "running", "Classifying open issues and building domain profiles",
+                llm_enabled=llm_client.is_enabled(),
+            )
+            result = _analyze_repo(repo, force=req.force, max_issues=req.max_issues)
+            _set_pipeline_status(
+                repo, "completed", "AI analysis complete", **result,
+                llm_enabled=llm_client.is_enabled(),
+            )
+        except Exception as exc:
+            _set_pipeline_status(repo, "failed", str(exc))
+            print(f"[analyze] failed {repo}: {exc}")
+
+    bg.add_task(_run)
+    return {
+        "status": "started",
+        "repo": repo,
+        "llm_enabled": llm_client.is_enabled(),
+    }
+
+@app.get("/api/ai/status")
+def ai_status(repo: str = ""):
+    """Small badge endpoint: LLM reachability and per-repo AI cache coverage."""
+    conn = get_conn()
+    try:
+        classified = conn.execute(
+            "SELECT COUNT(*) AS c FROM issue_classifications", ()
+        ).fetchone()["c"] if repo == "" else 0
+        open_issues = conn.execute(
+            "SELECT COUNT(*) AS c FROM issues WHERE state='open'", ()
+        ).fetchone()["c"] if repo == "" else 0
+        profiles = conn.execute(
+            "SELECT COUNT(*) AS c FROM developer_domains", ()
+        ).fetchone()["c"] if repo == "" else 0
+        if repo:
+            classified = conn.execute(
+                "SELECT COUNT(*) AS c FROM issue_classifications WHERE repo=?", (repo,)
+            ).fetchone()["c"]
+            open_issues = conn.execute(
+                "SELECT COUNT(*) AS c FROM issues WHERE repo=? AND state='open'", (repo,)
+            ).fetchone()["c"]
+            profiles = conn.execute(
+                "SELECT COUNT(*) AS c FROM developer_domains WHERE repo=?", (repo,)
+            ).fetchone()["c"]
+    finally:
+        conn.close()
+    return {
+        "llm_enabled": llm_client.is_enabled(),
+        "model": llm_client.model_name(),
+        "repo": repo or None,
+        "open_issues": open_issues,
+        "classified": classified,
+        "missing": max(open_issues - classified, 0),
+        "domain_profiles": profiles,
+    }
 
 @app.post("/api/pipeline/build-profiles")
 async def build_profiles_endpoint(req: BuildProfilesRequest, bg: BackgroundTasks):
@@ -540,7 +669,8 @@ def remove_repo(repo: str):
     tables = [
         "issues", "pull_requests", "commits", "issue_pr_links",
         "developer_profiles", "repository_developers", "issue_priority",
-        "recommendations", "assignments",
+        "recommendations", "assignments", "issue_classifications",
+        "developer_domains",
     ]
     existing = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     for table in tables:

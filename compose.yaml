@@ -22,6 +22,13 @@ services:
       AUTO_ASSIGN_NEW_ISSUES: ${AUTO_ASSIGN_NEW_ISSUES:-false}
       AUTO_ASSIGN_CAPACITY: ${AUTO_ASSIGN_CAPACITY:-3}
       AUTO_NOTIFY_DEVELOPER: ${AUTO_NOTIFY_DEVELOPER:-false}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      LLM_ENABLED: ${LLM_ENABLED:-true}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
+      LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-3}
+      LLM_MAX_ISSUES_PER_RUN: ${LLM_MAX_ISSUES_PER_RUN:-50}
+      LLM_MAX_PROFILES_PER_RUN: ${LLM_MAX_PROFILES_PER_RUN:-100}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
