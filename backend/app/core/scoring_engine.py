@@ -8,6 +8,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
+from app.core.domain_taxonomy import domain_match, domains_to_weights
+
 def _resolve_weights_path() -> str:
     raw = os.environ.get("WEIGHTS_PATH", "config/weights.json")
     if os.path.isabs(raw) and os.path.exists(raw):
@@ -29,14 +31,22 @@ DEFAULT_WEIGHTS = {
     "w4_file_affinity": 0.15,
     "w5_recency": 0.05,
     "w6_workload_penalty": 0.05,
+    # Kept at 0.0 in defaults so old configs (and ablation runs without a
+    # domain cache) reproduce the pre-domain ranking exactly.
+    "w7_domain_match": 0.0,
     "capacity_limit": 3
 }
 
 def load_weights() -> dict:
+    """File values merge over the defaults so partial configs never KeyError."""
+    weights = dict(DEFAULT_WEIGHTS)
     if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH) as f:
-            return json.load(f)
-    return DEFAULT_WEIGHTS
+        try:
+            with open(CONFIG_PATH) as f:
+                weights.update(json.load(f))
+        except (ValueError, OSError) as e:
+            print(f"[weights] failed to load {CONFIG_PATH}: {e}")
+    return weights
 
 # --- Individual signal functions ---
 
@@ -130,6 +140,15 @@ class ScoringEngine:
         w = self.weights
         vec = self._vectorizers.get(issue.get("repo"))
 
+        # Domain-aware signals from the AI layer (Step 6). Both sides are
+        # optional: no classification or no cached profile domains -> s7 = 0.
+        classification = issue.get("classification") or {}
+        issue_domains = classification.get("domains") or []
+        try:
+            dev_domains = domains_to_weights(json.loads(profile.get("domains_json") or "[]"))
+        except Exception:
+            dev_domains = {}
+
         # Parse profile JSON fields
         dev_files = json.loads(profile.get("files_json") or "{}")
         dev_components = json.loads(profile.get("components_json") or "{}")
@@ -154,6 +173,7 @@ class ScoringEngine:
             profile.get("open_issue_count", 0),
             capacity=w.get("capacity_limit", 3)
         )
+        s7 = domain_match(issue_domains, dev_domains)
 
         combined = (
             w["w1_text_similarity"]       * s1 +
@@ -161,7 +181,8 @@ class ScoringEngine:
             w["w3_component_overlap"]     * s3 +
             w["w4_file_affinity"]         * s4 +
             w["w5_recency"]               * s5 -
-            w["w6_workload_penalty"]      * s6
+            w["w6_workload_penalty"]      * s6 +
+            w.get("w7_domain_match", 0.0) * s7
         )
 
         return {
@@ -173,6 +194,7 @@ class ScoringEngine:
             "s4_file":      round(s4, 4),
             "s5_recency":   round(s5, 4),
             "s6_workload":  round(s6, 4),
+            "s7_domain":    round(s7, 4),
         }
 
     def rank(self, issue: dict, profiles: list) -> list:
