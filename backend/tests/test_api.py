@@ -17,6 +17,24 @@ from app.main import app
 
 client = TestClient(app)
 
+# ── Offline CI guard ─────────────────────────────────────────────────────────
+# TestClient executes background tasks synchronously, so any endpoint that
+# triggers an ingest would otherwise hit the live GitHub API from tests (the
+# unauthenticated rate limit even makes the fetcher sleep until reset — this
+# once hung CI for over an hour). Stub every network path so the suite stays
+# fully offline.
+
+@pytest.fixture(autouse=True)
+def offline_github(monkeypatch):
+    import app.ingestion.github_fetcher as gf
+    monkeypatch.setattr(gf, "_get", lambda *a, **k: None)
+    monkeypatch.setattr(gf, "fetch_issues", lambda *a, **k: [])
+    monkeypatch.setattr(gf, "fetch_contributors", lambda *a, **k: [])
+    monkeypatch.setattr(gf, "fetch_pull_requests", lambda *a, **k: [])
+    monkeypatch.setattr(gf, "fetch_commits", lambda *a, **k: [])
+    monkeypatch.setattr(gf, "fetch_source_files", lambda *a, **k: [])
+    monkeypatch.setattr(gf, "fetch_issue_timeline", lambda *a, **k: [])
+
 # ── Health ────────────────────────────────────────────────────────────────────
 
 def test_health():
