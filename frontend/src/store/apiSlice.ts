@@ -75,6 +75,13 @@ export interface DemoBug {
   evidence: string
 }
 
+export interface Developer {
+  username: string
+  resolved_count: number
+  open_issues: number
+  last_active: string
+}
+
 export const api = createApi({
   reducerPath: 'api',
   baseQuery: fetchBaseQuery({ baseUrl: '/api' }),
@@ -116,7 +123,7 @@ export const api = createApi({
     }),
 
     // Developers list
-    getDevelopers: builder.query<{ developers: any[]; total: number }, string>({
+    getDevelopers: builder.query<{ developers: Developer[]; total: number }, string>({
       query: (repo) => `/developers?repo=${encodeURIComponent(repo)}`,
       providesTags: ['Profiles'],
     }),

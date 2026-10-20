@@ -5,7 +5,7 @@ interface UiState {
   activeRepo:      string
   selectedIssue:   number | null
   checkedIssues:   number[]
-  activeTab:       'issues' | 'assign' | 'metrics' | 'developers' | 'demo'
+  activeTab:       'overview' | 'issues' | 'assign' | 'metrics' | 'developers' | 'demo'
   assignResults:   any[]
   notification:    { message: string; type: 'success' | 'error' | 'info' } | null
 }
@@ -14,7 +14,7 @@ const initialState: UiState = {
   activeRepo:    '',
   selectedIssue: null,
   checkedIssues: [],
-  activeTab:     'issues',
+  activeTab:     'overview',
   assignResults: [],
   notification:  null,
 }

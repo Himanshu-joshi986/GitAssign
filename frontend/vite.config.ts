@@ -18,5 +18,6 @@ export default defineConfig({
     // Docker build overrides with: npx vite build --outDir dist
     outDir: '../backend/static',
     emptyOutDir: true,
+    chunkSizeWarningLimit: 700,
   }
 })

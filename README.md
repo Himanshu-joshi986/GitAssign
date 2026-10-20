@@ -103,6 +103,8 @@ GitAssign/
 ├── frontend/
 │   ├── src/
 │   │   ├── components/           # Dashboard views
+│   │   │   └── ui/               # shadcn-style primitives
+│   │   ├── lib/                  # Formatting, priority, and navigation helpers
 │   │   ├── store/                # Redux Toolkit store + RTK Query API
 │   │   ├── App.tsx
 │   │   └── main.tsx
@@ -367,7 +369,7 @@ public issue.
 | Layer | Technologies |
 | --- | --- |
 | **Backend** | Python 3.11, FastAPI, SQLite, scikit-learn (TF-IDF), PyGithub, GitPython |
-| **Frontend** | React 18, TypeScript, Vite, Redux Toolkit + RTK Query, Tailwind CSS, Recharts |
+| **Frontend** | React 18, TypeScript, Vite, Redux Toolkit + RTK Query, Tailwind CSS, shadcn-style Radix primitives, lucide-react, Motion, Recharts |
 | **Deployment** | Docker Compose, Nginx |
 
 ---

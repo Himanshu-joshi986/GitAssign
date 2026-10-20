@@ -1,22 +1,59 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
+import {
+  ArrowRight,
+  Bug,
+  CheckCircle2,
+  FileCode2,
+  FlaskConical,
+  GitBranch,
+  ScanSearch,
+  Sparkles,
+  UploadCloud,
+  X,
+} from 'lucide-react'
 import { useDemoScanMutation, type DemoBug } from '../store/apiSlice'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { selectActiveRepo, setRepo, setTab } from '../store/uiSlice'
+import { Badge } from './ui/badge'
+import { Button } from './ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
+import { EmptyState } from './ui/empty-state'
+import { Input } from './ui/input'
+import { cn } from '../lib/utils'
+
+interface ScanResult {
+  bugs: DemoBug[]
+  profiles_used: number
+  message: string
+}
 
 export default function DemoScan() {
   const activeRepo = useAppSelector(selectActiveRepo)
   const dispatch = useAppDispatch()
+  const inputRef = useRef<HTMLInputElement>(null)
+
   const [repo, setRepoInput] = useState(activeRepo)
   const [filename, setFilename] = useState('')
   const [content, setContent] = useState('')
-  const [result, setResult] = useState<{ bugs: DemoBug[]; profiles_used: number; message: string } | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const [result, setResult] = useState<ScanResult | null>(null)
   const [scan, { isLoading, error }] = useDemoScanMutation()
+
+  const lineCount = content ? content.split('\n').length : 0
 
   async function chooseFile(file?: File) {
     if (!file) return
     setFilename(file.name)
     setContent(await file.text())
     setResult(null)
+  }
+
+  function clearFile() {
+    setFilename('')
+    setContent('')
+    setResult(null)
+    if (inputRef.current) inputRef.current.value = ''
   }
 
   async function handleScan() {
@@ -27,74 +64,221 @@ export default function DemoScan() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-6">
-          <p className="text-xs uppercase tracking-widest text-green-400 mb-2">Demo workflow</p>
-          <h1 className="text-2xl font-semibold text-gray-100">Scan a file and route its bugs</h1>
-          <p className="text-sm text-gray-400 mt-2 max-w-2xl">
-            Upload a file containing marked defects such as <code className="text-green-300">BUG-1: incorrect total</code>.
-            Existing profiles are preferred; a new repository receives demo developer assignments.
+    <div className="flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-6xl space-y-5 p-4 sm:p-6">
+        <div>
+          <Badge variant="outline" className="gap-1.5">
+            <FlaskConical className="size-3 text-primary" />
+            Demo workflow
+          </Badge>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight">Scan a file and route its defects</h1>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            Upload a source file with explicit <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px] text-primary">BUG-*</code>{' '}
+            markers. GitAssign creates queued issues and recommends a developer from repository history.
           </p>
         </div>
 
-        <div className="grid lg:grid-cols-[1fr_1.2fr] gap-4">
-          <section className="bg-gray-800 border border-gray-700 rounded-lg p-4">
-            <label className="block text-xs uppercase tracking-wider text-gray-400 mb-1">Repository name</label>
-            <input
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 mb-4 focus:outline-none focus:border-green-500"
-              placeholder="owner/new-repo"
-              value={repo}
-              onChange={e => setRepoInput(e.target.value)}
-            />
-            <label className="block text-xs uppercase tracking-wider text-gray-400 mb-1">Buggy file</label>
-            <input
-              type="file"
-              accept=".py,.js,.ts,.java,.txt,.md"
-              className="w-full text-sm text-gray-400 file:mr-3 file:rounded file:border-0 file:bg-gray-700 file:px-3 file:py-2 file:text-gray-200 hover:file:bg-gray-600"
-              onChange={e => chooseFile(e.target.files?.[0])}
-            />
-            {filename && <div className="mt-3 text-xs text-gray-500">Loaded: {filename} · {content.split('\n').length} lines</div>}
-            <button
-              className="mt-5 w-full bg-green-700 hover:bg-green-600 disabled:opacity-40 text-white text-sm px-4 py-2 rounded transition"
-              disabled={isLoading || !repo.trim() || !filename || !content}
-              onClick={handleScan}
-            >
-              {isLoading ? 'Scanning…' : 'Find bugs and assign'}
-            </button>
-            {error && <p className="mt-3 text-xs text-red-300">Scan failed. Check the repository name and file.</p>}
-          </section>
-
-          <section className="bg-gray-900 border border-gray-800 rounded-lg p-4 min-h-64">
-            {!result ? (
-              <div className="h-full min-h-56 flex items-center justify-center text-center text-gray-600 text-sm">
-                <div><div className="text-3xl mb-2">⌁</div><div>Scan results and assignments will appear here.</div></div>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+          <Card className="h-fit">
+            <CardHeader className="pb-3">
+              <CardTitle>Scan input</CardTitle>
+              <CardDescription>Repository context and the file to analyze</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                  Repository
+                </label>
+                <div className="relative">
+                  <GitBranch className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
+                  <Input
+                    value={repo}
+                    onChange={event => setRepoInput(event.target.value)}
+                    placeholder="owner/new-repo"
+                    className="bg-background/60 pl-8 font-mono text-xs"
+                  />
+                </div>
               </div>
-            ) : (
-              <>
-                <div className="flex items-center justify-between mb-4">
-                  <div><h2 className="font-medium text-gray-200">{result.message}</h2><p className="text-xs text-gray-500">{result.profiles_used ? `${result.profiles_used} historical profiles used` : 'No history found; demo fallback enabled'}</p></div>
-                  <span className="text-2xl font-bold text-green-400">{result.bugs.length}</span>
-                </div>
-                <div className="space-y-2">
-                  {result.bugs.map(bug => (
-                    <div key={bug.bug_id} className="border border-gray-700 rounded p-3 bg-gray-800">
-                      <div className="flex items-start justify-between gap-3">
-                        <div><div className="text-xs text-gray-500">{bug.bug_id} · issue #{bug.issue_num} · line {bug.line}</div><div className="text-sm text-gray-200 mt-1">{bug.title}</div></div>
-                        <div className="text-right shrink-0"><div className="text-sm font-semibold text-green-400">@{bug.assigned_to}</div><div className="text-xs text-gray-500">{bug.assignment_source === 'demo_fallback' ? 'demo fallback' : 'historical match'}</div></div>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-2">{bug.evidence}</p>
+
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                  Source file
+                </span>
+                <input
+                  ref={inputRef}
+                  type="file"
+                  id="demo-file"
+                  accept=".py,.js,.ts,.tsx,.java,.txt,.md"
+                  className="sr-only"
+                  onChange={event => chooseFile(event.target.files?.[0])}
+                />
+
+                {!filename ? (
+                  <label
+                    htmlFor="demo-file"
+                    onDragOver={event => {
+                      event.preventDefault()
+                      setDragging(true)
+                    }}
+                    onDragLeave={() => setDragging(false)}
+                    onDrop={event => {
+                      event.preventDefault()
+                      setDragging(false)
+                      chooseFile(event.dataTransfer.files?.[0])
+                    }}
+                    className={cn(
+                      'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-8 text-center transition-colors',
+                      dragging
+                        ? 'border-primary bg-primary/10'
+                        : 'border-border bg-background/40 hover:border-primary/40 hover:bg-accent/30',
+                    )}
+                  >
+                    <div className="grid size-10 place-items-center rounded-xl border border-border bg-muted/60">
+                      <UploadCloud className="size-5 text-primary" />
                     </div>
-                  ))}
-                </div>
-                {result.bugs.length > 0 && (
-                  <button className="mt-4 text-sm text-green-400 hover:text-green-300" onClick={() => dispatch(setTab('issues'))}>
-                    Open these bugs in Issue Queue →
-                  </button>
+                    <div>
+                      <p className="text-xs font-medium">Drop a file or click to browse</p>
+                      <p className="mt-0.5 text-[10px] text-muted-foreground">Python, JS/TS, Java, text, or Markdown</p>
+                    </div>
+                  </label>
+                ) : (
+                  <motion.div
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-center gap-2.5 rounded-xl border border-border bg-background/50 p-3"
+                  >
+                    <div className="grid size-9 shrink-0 place-items-center rounded-lg border border-primary/25 bg-primary/10">
+                      <FileCode2 className="size-4 text-primary" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-mono text-[11px]">{filename}</p>
+                      <p className="text-[10px] text-muted-foreground">{lineCount} lines</p>
+                    </div>
+                    <Button variant="ghost" size="icon-sm" onClick={clearFile} aria-label="Remove file">
+                      <X />
+                    </Button>
+                  </motion.div>
                 )}
-              </>
-            )}
-          </section>
+              </div>
+
+              <Button className="w-full" onClick={handleScan} disabled={isLoading || !repo.trim() || !filename || !content}>
+                {isLoading ? <ScanSearch className="animate-pulse" /> : <ScanSearch />}
+                {isLoading ? 'Scanning file…' : 'Find bugs and assign'}
+              </Button>
+
+              {error && (
+                <p className="rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-300">
+                  Scan failed. Check the repository name and file contents.
+                </p>
+              )}
+
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  Marker format
+                </p>
+                <pre className="mt-1.5 overflow-x-auto font-mono text-[10px] leading-relaxed text-foreground/80">
+{`# BUG-1: tax uses unit price
+tax = order.unit_price * order.tax_rate`}
+                </pre>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="min-h-[460px]">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Scan results</CardTitle>
+                  <CardDescription className="mt-1">Detected defects and routed developers</CardDescription>
+                </div>
+                {result && (
+                  <Badge variant="success">
+                    {result.bugs.length} bug{result.bugs.length === 1 ? '' : 's'}
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <AnimatePresence mode="wait">
+                {!result ? (
+                  <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                    <EmptyState
+                      icon={<ScanSearch />}
+                      title="No scan yet"
+                      description="Upload a marked file and run the scan. Results will list each defect, its line, and the recommended owner."
+                    />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="results"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="space-y-3"
+                  >
+                    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-background/40 p-3">
+                      <CheckCircle2 className="size-4 text-emerald-400" />
+                      <p className="text-xs font-medium">{result.message}</p>
+                      <Badge variant={result.profiles_used ? 'success' : 'warning'} className="ml-auto">
+                        {result.profiles_used
+                          ? `${result.profiles_used} profiles used`
+                          : 'Demo fallback enabled'}
+                      </Badge>
+                    </div>
+
+                    <div className="space-y-2">
+                      {result.bugs.map(bug => (
+                        <motion.div
+                          key={bug.bug_id}
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="rounded-xl border border-border/80 bg-background/40 p-3 transition-colors hover:border-border hover:bg-accent/25"
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="grid size-8 shrink-0 place-items-center rounded-lg border border-rose-500/25 bg-rose-500/10">
+                              <Bug className="size-4 text-rose-400" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+                                <span className="font-mono text-rose-300">{bug.bug_id}</span>
+                                <span>·</span>
+                                <span>issue #{bug.issue_num}</span>
+                                <span>·</span>
+                                <span>line {bug.line}</span>
+                              </div>
+                              <p className="mt-1 text-xs font-medium">{bug.title}</p>
+                              <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground">
+                                {bug.evidence}
+                              </p>
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <p className="text-[11px] font-semibold text-primary">@{bug.assigned_to}</p>
+                              <Badge variant={bug.assignment_source === 'historical_profile' ? 'success' : 'muted'} className="mt-1">
+                                {bug.assignment_source === 'historical_profile' ? 'Historical match' : 'Demo fallback'}
+                              </Badge>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+
+                    {result.bugs.length > 0 && (
+                      <div className="flex items-center justify-between rounded-lg border border-border/60 bg-primary/[0.035] p-3">
+                        <p className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                          <Sparkles className="size-3 text-primary" />
+                          Preview only — assignments are queued for review.
+                        </p>
+                        <Button size="sm" variant="outline" onClick={() => dispatch(setTab('issues'))}>
+                          Open queue
+                          <ArrowRight />
+                        </Button>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

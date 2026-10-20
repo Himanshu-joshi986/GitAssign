@@ -1,223 +1,387 @@
-import { useAppSelector } from '../store/hooks'
-import { selectSelectedIssue, selectActiveRepo } from '../store/uiSlice'
-import { useGetRecommendationsQuery, type Recommendation, type SignalDetail } from '../store/apiSlice'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
+import {
+  AlertCircle,
+  ArrowLeft,
+  Boxes,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  Clock3,
+  ExternalLink,
+  FileCode2,
+  FileText,
+  Gauge,
+  History,
+  MousePointerClick,
+  Sparkles,
+  Trophy,
+  UserRound,
+  Users,
+} from 'lucide-react'
+import { useAppDispatch, useAppSelector } from '../store/hooks'
+import { selectActiveRepo, selectSelectedIssue, selectIssue, setTab } from '../store/uiSlice'
+import {
+  useGetRecommendationsQuery,
+  type Recommendation,
+  type SignalDetail,
+} from '../store/apiSlice'
+import { Badge } from './ui/badge'
+import { Button } from './ui/button'
+import { EmptyState } from './ui/empty-state'
+import { Progress } from './ui/progress'
+import { Skeleton } from './ui/skeleton'
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
+import { priorityMeta } from '../lib/priority'
+import { cn, formatDate, initials } from '../lib/utils'
 
-const SIGNAL_COLORS = [
-  'bg-blue-700', 'bg-purple-700', 'bg-teal-700',
-  'bg-indigo-700', 'bg-cyan-700', 'bg-rose-700'
-]
+const SIGNAL_META: Record<
+  string,
+  { label: string; icon: typeof FileText; bar: string; text: string }
+> = {
+  text_similarity: { label: 'Text similarity', icon: FileText, bar: 'bg-emerald-400', text: 'text-emerald-400' },
+  past_issue_similarity: { label: 'Historical match', icon: History, bar: 'bg-sky-400', text: 'text-sky-400' },
+  component_overlap: { label: 'Components', icon: Boxes, bar: 'bg-violet-400', text: 'text-violet-400' },
+  file_affinity: { label: 'File affinity', icon: FileCode2, bar: 'bg-amber-400', text: 'text-amber-400' },
+  recency: { label: 'Recency', icon: Clock3, bar: 'bg-cyan-400', text: 'text-cyan-400' },
+  workload: { label: 'Workload', icon: Gauge, bar: 'bg-rose-400', text: 'text-rose-400' },
+}
 
-function ScoreBar({ value, max = 1 }: { value: number; max?: number }) {
-  const pct = Math.min((value / max) * 100, 100)
+function Disclosure({ open, children }: { open: boolean; children: ReactNode }) {
   return (
-    <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
-      <div
-        className="h-full bg-green-500 rounded-full transition-all"
-        style={{ width: `${pct}%` }}
-      />
-    </div>
+    <AnimatePresence initial={false}>
+      {open && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          className="overflow-hidden"
+        >
+          {children}
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
 
-function SignalChip({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <div className={`${color} rounded px-2 py-1 text-xs text-white`}>
-      <div className="font-medium">{(value * 100).toFixed(0)}%</div>
-      <div className="opacity-75 text-xs leading-tight">{label}</div>
-    </div>
-  )
-}
-
-function DevCard({ rec, rank }: { rec: Recommendation; rank: number }) {
-  const exp = rec.explanation
-  const signals = exp?.signals ?? {}
-
-  const signalKeys = Object.keys(signals)
+function DeveloperCard({ rec, rank }: { rec: Recommendation; rank: number }) {
+  const explanation = rec.explanation
+  const signals = Object.entries(explanation?.signals ?? {})
+  const score = Math.round(rec.final_score * 100)
+  const isTop = rank === 1
 
   return (
-    <div className="border border-gray-700 rounded-lg p-4 mb-3 bg-gray-800">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="w-6 h-6 rounded-full bg-green-800 text-green-300 text-xs flex items-center justify-center font-bold">
-            {rank}
-          </span>
-          <span className="font-semibold text-gray-200">@{rec.developer}</span>
+    <motion.article
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: Math.min(rank * 0.04, 0.2) }}
+      className={cn(
+        'rounded-xl border p-4 transition-colors',
+        isTop
+          ? 'border-primary/30 bg-primary/[0.045] shadow-glow'
+          : 'border-border/80 bg-card/60 hover:border-border hover:bg-accent/20',
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className={cn(
+            'relative grid size-9 shrink-0 place-items-center rounded-full border text-[11px] font-semibold',
+            isTop
+              ? 'border-primary/40 bg-primary/15 text-primary'
+              : 'border-border bg-muted text-foreground',
+          )}
+        >
+          {initials(rec.developer)}
+          {isTop && (
+            <span className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full border border-primary/40 bg-background">
+              <Trophy className="size-2.5 text-primary" />
+            </span>
+          )}
         </div>
-        <div className="text-right">
-          <div className="text-lg font-bold text-green-400">
-            {(rec.final_score * 100).toFixed(0)}
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-semibold">@{rec.developer}</span>
+            {isTop && <Badge variant="default">Best match</Badge>}
+            <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground">#{rank}</span>
           </div>
-          <div className="text-xs text-gray-500">score</div>
+          <div className="mt-1 flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1">
+              <CheckCircle2 className="size-3 text-emerald-400" />
+              {explanation?.resolved_total ?? 0} resolved
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <UserRound className="size-3 text-sky-400" />
+              {explanation?.open_issues ?? 0} open
+            </span>
+          </div>
+        </div>
+
+        <div className="shrink-0 text-right">
+          <div className={cn('text-xl font-semibold tabular-nums tracking-tight', isTop ? 'text-primary' : 'text-foreground')}>
+            {score}
+          </div>
+          <div className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground">fit score</div>
         </div>
       </div>
 
-      <ScoreBar value={rec.final_score} />
+      <Progress
+        value={score}
+        className="mt-3 h-1.5"
+        indicatorClassName={isTop ? 'bg-primary' : 'bg-foreground/35'}
+      />
 
-      {exp?.summary && (
-        <p className="text-xs text-gray-400 mt-2 leading-relaxed">{exp.summary}</p>
+      {explanation?.summary && (
+        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">{explanation.summary}</p>
       )}
 
-      <div className="flex gap-3 mt-2 text-xs text-gray-500">
-        <span>✅ {exp?.resolved_total ?? 0} resolved</span>
-        <span>📂 {exp?.open_issues ?? 0} open</span>
-      </div>
-
-      <div className="grid grid-cols-3 gap-1.5 mt-3">
-        {signalKeys.slice(0, 6).map((key, i) => {
-          const s = signals[key] as SignalDetail
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {signals.slice(0, 6).map(([key, signal]) => {
+          const detail = signal as SignalDetail
+          const meta = SIGNAL_META[key] ?? {
+            label: key.replace(/_/g, ' '),
+            icon: Sparkles,
+            bar: 'bg-foreground/40',
+            text: 'text-muted-foreground',
+          }
+          const Icon = meta.icon
           return (
-            <div key={key} title={s.detail}
-              className={`${SIGNAL_COLORS[i]} rounded px-1.5 py-1 text-white`}>
-              <div className="text-xs font-bold">{(s.value * 100).toFixed(0)}%</div>
-              <div className="text-xs opacity-75 leading-tight truncate">
-                {key.replace(/_/g, ' ')}
-              </div>
-            </div>
+            <Tooltip key={key}>
+              <TooltipTrigger asChild>
+                <div className="cursor-help rounded-lg border border-border/60 bg-background/40 p-2">
+                  <div className="flex items-center gap-1.5">
+                    <Icon className={cn('size-3', meta.text)} />
+                    <span className="truncate text-[10px] text-muted-foreground">{meta.label}</span>
+                    <span className="ml-auto font-mono text-[10px] tabular-nums text-foreground">
+                      {(detail.value * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <Progress value={detail.value * 100} className="mt-1.5 h-1" indicatorClassName={meta.bar} />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>{detail.detail}</TooltipContent>
+            </Tooltip>
           )
         })}
       </div>
-
-      {signalKeys.length > 0 && (
-        <div className="mt-2 text-xs text-gray-500 italic truncate" title={signals[signalKeys[0]]?.detail}>
-          {signals[signalKeys[0]]?.label}
-        </div>
-      )}
-    </div>
+    </motion.article>
   )
 }
 
 export default function RecommendationPanel() {
-  const repo        = useAppSelector(selectActiveRepo)
-  const issueNum    = useAppSelector(selectSelectedIssue)
+  const dispatch = useAppDispatch()
+  const repo = useAppSelector(selectActiveRepo)
+  const issueNum = useAppSelector(selectSelectedIssue)
   const [showBody, setShowBody] = useState(false)
   const [showFactors, setShowFactors] = useState(false)
 
   const { data, isLoading, error } = useGetRecommendationsQuery(
     { repo, issueNum: issueNum! },
-    { skip: !repo || issueNum === null }
+    { skip: !repo || issueNum === null },
   )
 
-  if (!issueNum) return (
-    <div className="flex-1 flex items-center justify-center text-gray-600 text-sm">
-      ← Select an issue to see recommendations
-    </div>
-  )
+  if (!issueNum) {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-background/30 p-6">
+        <EmptyState
+          icon={<MousePointerClick />}
+          title="Select an issue to inspect matches"
+          description="GitAssign ranks developers using text similarity, historical fixes, components, file affinity, recency, and workload."
+        />
+      </div>
+    )
+  }
 
-  if (isLoading) return (
-    <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">
-      Computing recommendations…
-    </div>
-  )
+  if (isLoading) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="space-y-3 border-b border-border/70 p-4">
+          <Skeleton className="h-5 w-20" />
+          <Skeleton className="h-5 w-3/4" />
+          <Skeleton className="h-3 w-1/2" />
+        </div>
+        <div className="space-y-3 p-4">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Skeleton key={index} className="h-40" />
+          ))}
+        </div>
+      </div>
+    )
+  }
 
-  if (error) return (
-    <div className="flex-1 flex items-center justify-center text-red-400 text-sm p-6">
-      Could not load recommendations. Build developer profiles first.
-    </div>
-  )
+  if (error) {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+        <EmptyState
+          icon={<AlertCircle />}
+          title="Recommendations unavailable"
+          description="Build developer profiles for this repository, then select the issue again."
+          action={
+            <Button size="sm" variant="outline" onClick={() => dispatch(setTab('developers'))}>
+              <Users />
+              Open developers
+            </Button>
+          }
+        />
+      </div>
+    )
+  }
 
-  const recs = data?.recommendations ?? []
+  const recommendations = data?.recommendations ?? []
+  const priority = data?.priority
+  const priorityStyle = priorityMeta(priority?.tier)
+  const githubUrl = `https://github.com/${repo}/issues/${issueNum}`
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="px-5 py-3 border-b border-gray-800 bg-gray-900">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-sm font-semibold text-gray-200">#{issueNum}</span>
-          {data?.priority && (
-            <span className={`text-xs px-2 py-0.5 rounded font-medium border ${
-              data.priority.tier === 'Critical' ? 'bg-red-900 text-red-300 border-red-700' :
-              data.priority.tier === 'High'     ? 'bg-orange-900 text-orange-300 border-orange-700' :
-              data.priority.tier === 'Medium'   ? 'bg-yellow-900 text-yellow-300 border-yellow-700' :
-                                                   'bg-green-900 text-green-300 border-green-700'
-            }`}>
-              {data.priority.tier} · Score {data.priority.score}
-            </span>
-          )}
+    <div className="flex min-h-0 flex-1 flex-col bg-background/20">
+      <div className="shrink-0 border-b border-border/70 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="lg:hidden"
+            onClick={() => dispatch(selectIssue(null))}
+            aria-label="Back to issue queue"
+          >
+            <ArrowLeft />
+          </Button>
+          <span className="font-mono text-xs text-muted-foreground">#{issueNum}</span>
+          {priority && <Badge variant={priorityStyle.badge}>{priority.tier}</Badge>}
           {data?.issue_state && (
-            <span className={`text-xs px-2 py-0.5 rounded ${
-              data.issue_state === 'closed' ? 'bg-gray-700 text-gray-300' :
-              data.issue_state === 'open'   ? 'bg-green-900 text-green-300' :
-                                              'bg-gray-700 text-gray-300'
-            }`}>{data.issue_state}</span>
+            <Badge variant={data.issue_state === 'open' ? 'success' : 'muted'} className="capitalize">
+              {data.issue_state}
+            </Badge>
           )}
+          {priority && (
+            <span className="font-mono text-[10px] text-muted-foreground">priority score {priority.score}</span>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-sm" className="ml-auto" asChild>
+                <a href={githubUrl} target="_blank" rel="noreferrer" aria-label="Open issue on GitHub">
+                  <ExternalLink />
+                </a>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Open on GitHub</TooltipContent>
+          </Tooltip>
         </div>
-        <p className="text-sm text-gray-300 line-clamp-2">{data?.issue_title}</p>
+
+        <h2 className="mt-2 text-base font-semibold leading-snug tracking-tight">{data?.issue_title}</h2>
 
         {data?.issue_labels && data.issue_labels.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-2">
-            {data.issue_labels.slice(0, 5).map((l: string, i: number) => (
-              <span key={i} className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded">
-                {l}
+          <div className="mt-2 flex flex-wrap gap-1">
+            {data.issue_labels.slice(0, 6).map((label: string) => (
+              <span
+                key={label}
+                className="rounded border border-border/70 bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+              >
+                {label}
               </span>
             ))}
           </div>
         )}
 
-        <div className="flex items-center gap-3 mt-2 text-xs text-gray-500 flex-wrap">
-          {data?.issue_author && <span>by @{data.issue_author}</span>}
-          {data?.issue_created && <span>created {new Date(data.issue_created).toLocaleDateString()}</span>}
+        <div className="mt-2.5 flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
+          {data?.issue_author && (
+            <span className="inline-flex items-center gap-1">
+              <UserRound className="size-3" />
+              @{data.issue_author}
+            </span>
+          )}
+          {data?.issue_created && (
+            <span className="inline-flex items-center gap-1">
+              <CalendarDays className="size-3" />
+              {formatDate(data.issue_created)}
+            </span>
+          )}
           {data?.issue_closed && data.issue_state === 'closed' && (
-            <span>closed {new Date(data.issue_closed).toLocaleDateString()}</span>
+            <span>closed {formatDate(data.issue_closed)}</span>
           )}
         </div>
 
-        <div className="flex gap-2 mt-3">
-          {data?.priority?.factors && data.priority.factors.length > 0 && (
-            <button
-              className="text-xs px-3 py-1 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded transition"
-              onClick={() => setShowFactors(!showFactors)}
-            >
-              {showFactors ? '▲' : '▼'} Priority Factors ({data.priority.factors.length})
-            </button>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {priority?.factors && priority.factors.length > 0 && (
+            <Button variant="outline" size="sm" onClick={() => setShowFactors(value => !value)}>
+              Priority factors
+              <ChevronDown className={cn('transition-transform', showFactors && 'rotate-180')} />
+            </Button>
           )}
           {data?.issue_body && (
-            <button
-              className="text-xs px-3 py-1 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded transition"
-              onClick={() => setShowBody(!showBody)}
-            >
-              {showBody ? '▲' : '▼'} Issue Details
-            </button>
+            <Button variant="outline" size="sm" onClick={() => setShowBody(value => !value)}>
+              Issue details
+              <ChevronDown className={cn('transition-transform', showBody && 'rotate-180')} />
+            </Button>
           )}
         </div>
 
-        {showFactors && data?.priority?.factors && (
-          <div className="mt-2 bg-gray-800 rounded p-3 border border-gray-700">
-            <div className="text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
-              Contributing Priority Factors
-            </div>
-            <ul className="text-xs text-gray-300 space-y-0.5">
-              {data.priority.factors.map((f: string, i: number) => (
-                <li key={i} className="flex items-start gap-1.5">
-                  <span className="text-green-400 mt-0.5">•</span>
-                  <span>{f}</span>
+        <Disclosure open={showFactors}>
+          <div className="mt-2 rounded-lg border border-border/70 bg-muted/40 p-3">
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Contributing priority factors
+            </p>
+            <ul className="space-y-1">
+              {priority?.factors?.map((factor: string) => (
+                <li key={factor} className="flex items-start gap-1.5 text-[11px] text-foreground/85">
+                  <span className={cn('mt-1.5 size-1 shrink-0 rounded-full', priorityStyle.dot)} />
+                  {factor}
                 </li>
               ))}
             </ul>
           </div>
-        )}
+        </Disclosure>
 
-        {showBody && data?.issue_body && (
-          <div className="mt-2 bg-gray-800 rounded p-3 border border-gray-700">
-            <div className="text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
-              Issue Description
-            </div>
-            <pre className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed font-sans max-h-40 overflow-y-auto">
-              {data.issue_body}
+        <Disclosure open={showBody}>
+          <div className="mt-2 rounded-lg border border-border/70 bg-muted/40 p-3">
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Issue description
+            </p>
+            <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap font-sans text-[11px] leading-relaxed text-foreground/80">
+              {data?.issue_body}
             </pre>
           </div>
-        )}
+        </Disclosure>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
-        <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 font-medium">
-          Top {recs.length} Developer Recommendations
-        </h3>
-        {recs.length === 0 ? (
-          <div className="text-center text-gray-600 text-sm py-8">
-            No recommendations. Build developer profiles first via the pipeline.
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="mb-3 flex items-end justify-between gap-2">
+          <div>
+            <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+              <Sparkles className="size-3.5 text-primary" />
+              Recommended developers
+            </h3>
+            <p className="mt-0.5 text-[10px] text-muted-foreground">
+              Ranked by weighted evidence and current workload
+            </p>
           </div>
+          <Badge variant="outline" className="font-mono">
+            Top {recommendations.length}
+          </Badge>
+        </div>
+
+        {recommendations.length === 0 ? (
+          <EmptyState
+            icon={<Users />}
+            title="No recommendations yet"
+            description="Build developer profiles from resolved issues and commit history to generate matches."
+            action={
+              <Button size="sm" variant="outline" onClick={() => dispatch(setTab('developers'))}>
+                <Users />
+                Build profiles
+              </Button>
+            }
+          />
         ) : (
-          recs.map((rec, i) => <DevCard key={rec.developer} rec={rec} rank={i + 1} />)
+          <div className="space-y-3">
+            {recommendations.map((rec, index) => (
+              <DeveloperCard key={rec.developer} rec={rec} rank={index + 1} />
+            ))}
+            <p className="flex items-center justify-center gap-1.5 pt-1 text-[10px] text-muted-foreground">
+              <Sparkles className="size-3" />
+              Preview only — apply assignments explicitly from Batch Assign
+            </p>
+          </div>
         )}
       </div>
     </div>
