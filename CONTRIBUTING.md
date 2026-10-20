@@ -47,6 +47,9 @@ docker compose up --build
   `fetch` calls.
 - **Configuration:** never hard-code secrets. Add new settings to
   `.env.example` and the README configuration table.
+- **Secrets and keys:** never commit `GITHUB_TOKEN`, `GEMINI_API_KEY`, or any
+  credential — keep them in your local `.env` (gitignored) and only ever copy
+  the placeholder entries into `.env.example`.
 - **Paths:** resolve data, docs, and config paths relative to the `backend/`
   directory so local runs and the Docker image behave the same way.
 
@@ -68,7 +71,9 @@ npm run build
 
 Add or update tests for every behavior change. API tests live in
 `backend/tests/test_api.py`; scoring and profile tests live in
-`backend/tests/test_core.py`.
+`backend/tests/test_core.py`; AI pipeline cache/fallback tests live in
+`backend/tests/test_ai_pipeline.py`. The whole suite must run offline —
+tests monkeypatch the LLM client and never need a real `GEMINI_API_KEY`.
 
 ## Pull request checklist
 
