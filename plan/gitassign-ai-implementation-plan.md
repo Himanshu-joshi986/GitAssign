@@ -235,7 +235,7 @@ Fixed taxonomy so profiles and issues use the same vocabulary:
 
 ---
 
-## Step 3 — Issue classification with cache
+  ## Step 3 — Issue classification with cache
 
 ### New file: `backend/app/core/issue_classifier.py`
 

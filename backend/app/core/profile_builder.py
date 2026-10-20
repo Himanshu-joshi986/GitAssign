@@ -81,13 +81,18 @@ def build_profiles(repo: str, cutoff_date: str = None, persist: bool = True):
     """
     conn = get_conn()
 
-    # Include repository contributors with no history so new repos still have candidates.
+    # Candidate filter: only contributors with real previous history.
+    # - repository_developers with at least one contribution
+    # - developers who resolved at least one issue
+    # - commit authors
     resolvers = conn.execute("""
-        SELECT resolver AS username FROM issue_pr_links
-        WHERE repo=? AND resolver IS NOT NULL AND resolver != ''
+        SELECT username FROM repository_developers
+        WHERE repo=? AND contributions > 0
         UNION
-        SELECT username FROM repository_developers WHERE repo=?
-    """, (repo, repo)).fetchall()
+        SELECT resolver FROM issue_pr_links WHERE repo=? AND resolver IS NOT NULL AND resolver != ''
+        UNION
+        SELECT author FROM commits WHERE repo=? AND author != ''
+    """, (repo, repo, repo)).fetchall()
 
     profiles = {}
     for row in resolvers:
@@ -119,12 +124,14 @@ def _build_single(conn, repo: str, developer: str, cutoff_date: str = None) -> d
         date_filter_issues = ""
         date_filter_commits = ""
 
-    # Get resolved issues
+    # Get resolved issues (exclude not_planned closures — they are not real history)
     resolved = conn.execute(f"""
         SELECT i.number, i.title, i.body, i.labels, i.closed_at
         FROM issues i
         JOIN issue_pr_links l ON l.repo=i.repo AND l.issue_num=i.number
-        WHERE i.repo=? AND l.resolver=? AND i.state='closed' {date_filter_issues}
+        WHERE i.repo=? AND l.resolver=? AND i.state='closed'
+          AND (i.state_reason IS NULL OR i.state_reason != 'not_planned')
+          {date_filter_issues}
         ORDER BY i.closed_at DESC
     """, date_params_issues).fetchall()
 
@@ -166,6 +173,12 @@ def _build_single(conn, repo: str, developer: str, cutoff_date: str = None) -> d
         WHERE repo=? AND author=? {date_filter_commits}
         ORDER BY created_at DESC LIMIT 500
     """, date_params_commits).fetchall()
+
+    # History filter: only keep profiles backed by at least one commit or one
+    # resolved issue. Replay behaviour above (cutoff + no resolved → None) is
+    # unchanged; this only stops empty live profiles for inactive contributors.
+    if not resolved and not commits_data:
+        return None
 
     files = {}
     last_active = None

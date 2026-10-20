@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS issue_pr_links (
     issue_num   INTEGER NOT NULL,
     pr_num      INTEGER NOT NULL,
     link_type   TEXT,  -- closes/fixes/resolves/ref
-    resolver    TEXT,  -- developer username who merged
+    resolver    TEXT,  -- developer username who resolved (PR author, not merger)
     UNIQUE(repo, issue_num, pr_num)
 );
 

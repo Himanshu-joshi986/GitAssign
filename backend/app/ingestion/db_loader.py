@@ -12,11 +12,11 @@ def upsert_issues(repo: str, issues: list):
         labels = json.dumps([l["name"] for l in i.get("labels", [])])
         try:
             conn.execute("""
-                INSERT INTO issues (repo, number, title, body, labels, state, created_at, closed_at, author, assignees_json)
-                    VALUES (?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO issues (repo, number, title, body, labels, state, created_at, closed_at, author, assignees_json, state_reason)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(repo, number) DO UPDATE SET
                         state=excluded.state, closed_at=excluded.closed_at, labels=excluded.labels,
-                        assignees_json=excluded.assignees_json
+                        assignees_json=excluded.assignees_json, state_reason=excluded.state_reason
             """, (
                 repo,
                 i["number"],
@@ -27,7 +27,8 @@ def upsert_issues(repo: str, issues: list):
                 i.get("created_at", ""),
                 i.get("closed_at", ""),
                 i.get("user", {}).get("login", "") if i.get("user") else "",
-                json.dumps([a.get("login", "") for a in i.get("assignees", []) if a.get("login")])
+                json.dumps([a.get("login", "") for a in i.get("assignees", []) if a.get("login")]),
+                i.get("state_reason")
             ))
             inserted += 1
         except Exception as e:
@@ -42,12 +43,17 @@ def upsert_repository_developers(repo: str, contributors: list):
         username = contributor.get("login", "")
         if not username:
             continue
+        try:
+            contributions = int(contributor.get("contributions") or 0)
+        except (TypeError, ValueError):
+            contributions = 0
         conn.execute("""
-            INSERT INTO repository_developers (repo, username, display_name, account_type)
-            VALUES (?,?,?,?)
+            INSERT INTO repository_developers (repo, username, display_name, account_type, contributions)
+            VALUES (?,?,?,?,?)
             ON CONFLICT(repo, username) DO UPDATE SET
-                display_name=excluded.display_name, account_type=excluded.account_type
-        """, (repo, username, contributor.get("name") or username, contributor.get("type", "User")))
+                display_name=excluded.display_name, account_type=excluded.account_type,
+                contributions=excluded.contributions
+        """, (repo, username, contributor.get("name") or username, contributor.get("type", "User"), contributions))
         conn.execute("INSERT OR IGNORE INTO developers (username, display_name) VALUES (?,?)",
                      (username, contributor.get("name") or username))
     conn.commit()
@@ -60,18 +66,23 @@ def upsert_pull_requests(repo: str, prs: list):
         merged_by = None
         if pr.get("merged_by"):
             merged_by = pr["merged_by"].get("login")
+        # The PR author is the real resolver; merged_by is only who clicked merge.
+        author = None
+        if pr.get("user"):
+            author = pr["user"].get("login")
         try:
             conn.execute("""
-                INSERT INTO pull_requests (repo, number, title, body, merged_at, merged_by, state)
-                VALUES (?,?,?,?,?,?,?)
+                INSERT INTO pull_requests (repo, number, title, body, merged_at, merged_by, author, state)
+                VALUES (?,?,?,?,?,?,?,?)
                 ON CONFLICT(repo, number) DO UPDATE SET
-                    merged_at=excluded.merged_at, merged_by=excluded.merged_by
+                    merged_at=excluded.merged_at, merged_by=excluded.merged_by, author=excluded.author
             """, (
                 repo, pr["number"],
                 pr.get("title", ""),
                 pr.get("body", "") or "",
                 pr.get("merged_at", ""),
                 merged_by,
+                author,
                 pr.get("state", "")
             ))
             inserted += 1

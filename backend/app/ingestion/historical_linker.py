@@ -17,25 +17,30 @@ def _extract_issue_refs(text: str) -> list:
     return [int(m) for m in CLOSE_PATTERNS.findall(text)]
 
 def link_via_pr_bodies(repo: str):
-    """Strategy 1 — scan PR body text for 'Closes #X'."""
+    """Strategy 1 — scan PR body text for 'Closes #X'.
+
+    The resolver is the PR *author* (who did the work), not the merger.
+    merged_by is only a fallback when the author is missing.
+    """
     conn = get_conn()
     prs = conn.execute(
-        "SELECT number, body, merged_by, merged_at FROM pull_requests WHERE repo=? AND merged_at IS NOT NULL",
+        "SELECT number, body, author, merged_by, merged_at FROM pull_requests WHERE repo=? AND merged_at IS NOT NULL",
         (repo,)
     ).fetchall()
     linked = 0
     for pr in prs:
+        resolver = pr["author"] or pr["merged_by"]
         refs = _extract_issue_refs(pr["body"] or "")
         for issue_num in refs:
             try:
                 conn.execute("""
                     INSERT OR IGNORE INTO issue_pr_links (repo, issue_num, pr_num, link_type, resolver)
                     VALUES (?,?,?,?,?)
-                """, (repo, issue_num, pr["number"], "body_keyword", pr["merged_by"]))
-                if pr["merged_by"]:
+                """, (repo, issue_num, pr["number"], "body_keyword", resolver))
+                if resolver:
                     conn.execute(
                         "INSERT OR IGNORE INTO developers (username, display_name) VALUES (?,?)",
-                        (pr["merged_by"], pr["merged_by"])
+                        (resolver, resolver)
                     )
                 linked += 1
             except Exception:
