@@ -1,0 +1,19 @@
+{
+  "domains": [
+    {"name": "backend", "description": "server logic, services, business rules"},
+    {"name": "frontend", "description": "UI, components, client state, styling"},
+    {"name": "api", "description": "REST/GraphQL endpoints, contracts, SDKs"},
+    {"name": "database", "description": "schemas, queries, migrations, persistence"},
+    {"name": "auth", "description": "authentication, authorization, sessions, permissions"},
+    {"name": "security", "description": "vulnerabilities, crypto, input validation, CVEs"},
+    {"name": "infrastructure", "description": "Docker, Kubernetes, deployment, cloud"},
+    {"name": "ci-cd", "description": "pipelines, release automation, build tooling"},
+    {"name": "testing", "description": "test suites, fixtures, QA automation"},
+    {"name": "docs", "description": "documentation, guides, examples"},
+    {"name": "performance", "description": "latency, memory, profiling, optimization"},
+    {"name": "data-ml", "description": "data processing, analytics, ML, statistics"},
+    {"name": "mobile", "description": "Android, iOS, React Native, Flutter"},
+    {"name": "networking", "description": "HTTP clients, sockets, protocols, proxies"},
+    {"name": "developer-tools", "description": "CLI, linting, formatting, editor tooling"}
+  ]
+}
