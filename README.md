@@ -43,7 +43,8 @@ GitHub writes are opt-in.
 | --- | --- |
 | **History ingestion** | Imports issues, pull requests, commits, and contributors from GitHub or a BugHub CSV |
 | **Developer profiles** | Builds expertise profiles from resolved issues and file-level commit history |
-| **Six-signal scoring** | Combines text similarity, past issues, components, file affinity, recency, and workload |
+| **Seven-signal scoring** | Text similarity, past issues, components, file affinity, recency, workload, and AI domain fit |
+| **AI triage (optional)** | Gemini classifies open issues and builds cached developer domain profiles; deterministic heuristics take over without a key |
 | **Explainable rankings** | Every recommendation includes per-signal contributions and human-readable reasons |
 | **Workload balancing** | Capacity-aware batch assignment with conflict checks |
 | **Priority triage** | Rule-based Critical / High / Medium / Low classification with factor evidence |
@@ -51,8 +52,11 @@ GitHub writes are opt-in.
 | **Demo workflow** | Upload a source file with `BUG-*` markers to exercise the full pipeline |
 | **Safety first** | Preview by default; applying assignments to GitHub requires an explicit action |
 
-No neural networks, no GPU, and no model training: scoring is deterministic and
-weights are configurable at runtime.
+Scoring is deterministic — no GPU, no model training, weights configurable at
+runtime. An optional LLM layer (Gemini) handles issue classification and
+developer domain profiles; its results are cached in SQLite and reused, and
+without a key the pipeline completes using built-in keyword heuristics
+(clearly labelled `model: heuristic` in the responses).
 
 ---
 
@@ -77,9 +81,12 @@ flowchart LR
 1. **Ingest** issues, pull requests, and commits into a local SQLite database.
 2. **Build profiles** that map each developer to components, files, and resolved
    issue history.
-3. **Score** every candidate with configurable signals and a workload penalty.
-4. **Explain** the ranking, then let a maintainer preview, apply, or override it.
-5. **Evaluate** the model with a chronological replay and ablation study.
+3. **Triage with AI (optional)** — Gemini classifies every open issue
+   (bug / feature / docs … + domains) and builds an expertise profile per
+   contributor; results are cached and never recomputed unless forced.
+4. **Score** every candidate with configurable signals and a workload penalty.
+5. **Explain** the ranking, then let a maintainer preview, apply, or override it.
+6. **Evaluate** the model with a chronological replay and ablation study.
 
 ---
 
@@ -249,6 +256,13 @@ All settings are read from environment variables (or `.env`).
 | `AUTO_ASSIGN_NEW_ISSUES` | `false` | Automatically assign new issues during sync |
 | `AUTO_ASSIGN_CAPACITY` | `3` | Minimum free capacity for automatic assignment |
 | `AUTO_NOTIFY_DEVELOPER` | `false` | Mention the assignee in a GitHub comment |
+| `GEMINI_API_KEY` | _empty_ | Enables LLM triage; empty = deterministic heuristic fallback |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model used for classification and profiles |
+| `LLM_ENABLED` | `true` | Master switch for the LLM layer (a key is still required) |
+| `LLM_TIMEOUT_SECONDS` | `60` | Per-request timeout for `llm_client` |
+| `LLM_MAX_RETRIES` | `3` | Retries on HTTP 429/5xx with exponential backoff |
+| `LLM_MAX_ISSUES_PER_RUN` | `50` | Classified issues per analyze run (`0` = no cap) |
+| `LLM_MAX_PROFILES_PER_RUN` | `100` | Domain profiles rebuilt per run (`0` = no cap) |
 
 Scoring weights live in [`backend/config/weights.json`](backend/config/weights.json).
 Edit the file and restart, or remount it with Compose — no retraining required.
@@ -266,16 +280,22 @@ S(i, d) = w1 · TextSimilarity
         + w4 · FileAffinity
         + w5 · Recency
         - w6 · CurrentWorkload
+        + w7 · DomainMatch
 ```
 
 | Weight | Default | Signal |
 | --- | ---: | --- |
-| `w1_text_similarity` | 0.35 | TF-IDF cosine similarity between issue text and resolved issues |
-| `w2_past_issue_similarity` | 0.25 | Similarity to the developer's individual resolved issues |
+| `w1_text_similarity` | 0.30 | TF-IDF cosine similarity between issue text and resolved issues |
+| `w2_past_issue_similarity` | 0.20 | Similarity to the developer's individual resolved issues |
 | `w3_component_overlap` | 0.15 | Overlap between issue components and the developer's components |
-| `w4_file_affinity` | 0.15 | Commit frequency on files mentioned in the issue |
+| `w4_file_affinity` | 0.10 | Commit frequency on files mentioned in the issue |
 | `w5_recency` | 0.05 | Time-decayed activity |
 | `w6_workload_penalty` | 0.05 | Open assignments relative to `capacity_limit` (default `3`) |
+| `w7_domain_match` | 0.15 | Overlap between the issue's AI domains and the developer's cached domain weights |
+
+Set `w7_domain_match` to `0` in `weights.json` to reproduce the pre-AI ranking
+exactly (also the default behaviour whenever a classification or domain cache
+is missing, keeping old ablation numbers reproducible).
 
 ### Priority mapping
 
@@ -289,6 +309,28 @@ S(i, d) = w1 · TextSimilarity
 
 The result is a **Critical / High / Medium / Low** label plus a numeric score
 and the list of factors that produced it.
+
+### AI triage and caching guarantees
+
+When `GEMINI_API_KEY` is set, two LLM artifacts are produced and cached:
+
+| Artifact | Table | Key | Reuse rule |
+| --- | --- | --- | --- |
+| Issue classification (`kind`, domains, difficulty, severity) | `issue_classifications` | `(repo, issue_num)` + `input_hash` | Reclassified only when the issue title/body/labels, model, or prompt version changes, or `force=true` |
+| Developer domain profile (domains, preferred kinds, summary) | `developer_domains` | `(repo, username)` | **Never** recomputed while a row exists; only `POST /api/pipeline/analyze` with `force: true` rebuilds |
+
+Rules enforced by the pipeline:
+
+- Only contributors with real history (commits or resolved issues) are
+  profiled; `/contributors` entries with zero contributions and bots are
+  ignored.
+- Developers whose issues were closed as `not_planned` are not credited with
+  resolving them, and the PR **author** — not the person who clicked merge —
+  is recorded as the resolver.
+- Every list/API read takes zero LLM calls; on-demand classification for one
+  issue costs at most one (usually zero, cache hit).
+- If the LLM fails or is disabled, deterministic heuristics fill in with
+  `model: "heuristic"`; a failed LLM call is never cached as final.
 
 ---
 
@@ -308,6 +350,8 @@ and the list of factors that produced it.
 | `GET` | `/api/pipeline/status?repo=` | Background ingestion status |
 | `POST` | `/api/pipeline/ingest` | Ingest a GitHub repository (background) |
 | `POST` | `/api/pipeline/build-profiles` | Build profiles (background) |
+| `POST` | `/api/pipeline/analyze` | AI triage: classify open issues + build domain profiles, cached (`{repo, force, max_issues}`) |
+| `GET` | `/api/ai/status?repo=` | LLM reachability + cache coverage badge |
 | `GET` | `/api/evaluation/metrics` | Latest ablation results |
 | `POST` | `/api/evaluation/run` | Run the ablation study (background) |
 | `POST` | `/api/demo/scan` | Scan a file for `BUG-*` markers and queue issues |
@@ -328,7 +372,7 @@ issues resolved after it. A TF-IDF baseline is included for comparison.
 | B | A + component overlap |
 | C | B + file affinity |
 | D | C + recency |
-| E | Full model (all six signals) |
+| E | Full model (all seven signals — the AI domain signal is skipped whenever a classification or domain cache is absent) |
 
 ```bash
 docker compose exec backend python -m app.evaluation.ablation_runner \
