@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS issues (
     closed_at   TEXT,
     author      TEXT,
     assignees_json TEXT DEFAULT '[]',
+    state_reason TEXT,  -- completed/not_planned/etc.; lets us exclude not_planned from history
     UNIQUE(repo, number)
 );
 
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS pull_requests (
     body        TEXT,
     merged_at   TEXT,
     merged_by   TEXT,
+    author      TEXT,  -- PR author is the real resolver, not the merger
     state       TEXT,
     UNIQUE(repo, number)
 );
@@ -54,6 +56,7 @@ CREATE TABLE IF NOT EXISTS repository_developers (
     username    TEXT NOT NULL,
     display_name TEXT,
     account_type TEXT DEFAULT 'User',
+    contributions INTEGER DEFAULT 0,  -- GitHub contributor count
     PRIMARY KEY (repo, username)
 );
 
@@ -117,3 +120,36 @@ CREATE INDEX IF NOT EXISTS idx_issue_links_repo_resolver_issue
 
 CREATE INDEX IF NOT EXISTS idx_commits_repo_author_created
     ON commits(repo, author, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS issue_classifications (
+    repo                TEXT NOT NULL,
+    issue_num           INTEGER NOT NULL,
+    kind                TEXT NOT NULL,              -- bug|feature|docs|test|refactor|performance|security|chore
+    domains_json        TEXT NOT NULL DEFAULT '[]', -- [{"name":"backend","confidence":0.8}]
+    difficulty          INTEGER DEFAULT 3,          -- 1..5
+    severity            TEXT DEFAULT 'medium',      -- low|medium|high|critical
+    summary             TEXT,
+    required_skills_json TEXT DEFAULT '[]',
+    confidence          REAL DEFAULT 0,
+    model               TEXT,
+    input_hash          TEXT,
+    created_at          TEXT NOT NULL,
+    PRIMARY KEY (repo, issue_num)
+);
+
+CREATE TABLE IF NOT EXISTS developer_domains (
+    repo                TEXT NOT NULL,
+    username            TEXT NOT NULL,
+    domains_json        TEXT NOT NULL DEFAULT '[]', -- [{"name":"backend","weight":0.6,"evidence":"..."}]
+    preferred_kinds_json TEXT DEFAULT '[]',
+    summary             TEXT,
+    evidence_hash       TEXT,
+    model               TEXT,
+    built_at            TEXT NOT NULL,
+    PRIMARY KEY (repo, username)
+);
+
+CREATE INDEX IF NOT EXISTS idx_issue_classifications_repo
+    ON issue_classifications(repo);
+CREATE INDEX IF NOT EXISTS idx_developer_domains_repo
+    ON developer_domains(repo);
