@@ -151,9 +151,6 @@ def _build_single(conn, repo: str, developer: str, cutoff_date: str = None) -> d
         ORDER BY i.closed_at DESC
     """, date_params_issues).fetchall()
 
-    if not resolved and cutoff_date:
-        return None
-
     # Aggregate resolved issue text
     resolved_texts_list = []
     evidence = []

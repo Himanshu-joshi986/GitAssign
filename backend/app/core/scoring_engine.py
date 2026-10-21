@@ -93,15 +93,21 @@ def file_affinity(mentioned_files: list, dev_files: dict) -> float:
     # Normalise by total so it is in [0, 1]
     return min(hits / total_commits, 1.0)
 
-def recency_score(last_active: str, half_life_days: int = 60) -> float:
+def recency_score(last_active: str, half_life_days: int = 60, reference_time: str = None) -> float:
     """Exponential decay: 1.0 if active today, 0.5 after half_life_days, etc."""
     if not last_active:
         return 0.0
     try:
         last = datetime.fromisoformat(last_active.replace("Z", "+00:00"))
-        now = datetime.now(timezone.utc)
+        now = datetime.fromisoformat(reference_time.replace("Z", "+00:00")) if reference_time else datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
         days_ago = (now - last).days
-        return math.exp(-days_ago / half_life_days)
+        if days_ago < 0:
+            return 0.0
+        return math.exp(-math.log(2) * days_ago / half_life_days)
     except Exception:
         return 0.0
 
@@ -168,7 +174,10 @@ class ScoringEngine:
         s2 = past_issue_similarity(issue["text"], past_issue_list)
         s3 = component_overlap(issue.get("components", []), dev_components)
         s4 = file_affinity(issue.get("mentioned_files", []), dev_files)
-        s5 = recency_score(profile.get("last_active", ""))
+        s5 = recency_score(
+            profile.get("last_active", ""),
+            reference_time=issue.get("evaluation_as_of"),
+        )
         s6 = workload_penalty(
             profile.get("open_issue_count", 0),
             capacity=w.get("capacity_limit", 3)
@@ -200,7 +209,7 @@ class ScoringEngine:
     def rank(self, issue: dict, profiles: list) -> list:
         """Return profiles ranked by score, best first."""
         scored = [self.score(issue, p) for p in profiles]
-        return sorted(scored, key=lambda x: x["final_score"], reverse=True)
+        return sorted(scored, key=lambda x: (-x["final_score"], x["developer"].casefold()))
 
 # Singleton
 _engine = None

@@ -362,9 +362,16 @@ Interactive documentation: <http://localhost:8000/docs>.
 
 ## Evaluation
 
-The evaluation harness replays history chronologically: profiles are built from
-issues resolved before a cutoff date, and recommendations are scored against
-issues resolved after it. A TF-IDF baseline is included for comparison.
+The evaluation harness replays issues chronologically. Each test issue is
+scored using only developer history available before it was created; recency is
+also measured as of that issue's creation date. Issues closed as `not_planned`
+are excluded. If an issue links to multiple pull requests, every linked PR
+author is treated as a relevant outcome. Top-k and MRR are calculated only for
+issues where at least one relevant developer has historical profile evidence.
+Results report eligible sample size and candidate coverage separately, so
+cold-start issues are not counted as ranking errors. `train_before` sets the
+earliest test issue creation date; `test_after` sets the closure-date boundary.
+A TF-IDF baseline is available for comparison.
 
 | Config | Signals enabled |
 | --- | --- |
@@ -372,7 +379,7 @@ issues resolved after it. A TF-IDF baseline is included for comparison.
 | B | A + component overlap |
 | C | B + file affinity |
 | D | C + recency |
-| E | Full model (all seven signals — the AI domain signal is skipped whenever a classification or domain cache is absent) |
+| E | All historically evaluable signals (workload and cached AI domains are omitted because historical states are unavailable) |
 
 ```bash
 docker compose exec backend python -m app.evaluation.ablation_runner \
@@ -380,8 +387,9 @@ docker compose exec backend python -m app.evaluation.ablation_runner \
 ```
 
 Results are written to [`docs/results.md`](docs/results.md) and displayed in the
-**Metrics** tab. The Eclipse JDT target is roughly 55–65% Top-5 accuracy, against
-a published text-only baseline of about 54%.
+**Metrics** tab. Compare ranking scores alongside coverage and eligible sample
+size; ranking percentages alone do not show how often the system had evidence
+to recommend someone.
 
 ---
 

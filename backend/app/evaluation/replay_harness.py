@@ -4,8 +4,13 @@ Historical replay harness — no future data leaks.
 For each test issue:
   1. Build developer profiles using ONLY data before issue.created_at
   2. Run scoring engine on the issue
-  3. Check if actual resolver appears in top-1, top-3, top-5
+  3. Check whether any evidence-backed resolver appears in top-1, top-3, top-5
   4. Compute MRR = mean(1 / rank)
+
+Issues can be linked to several pull requests, so every linked PR author is
+considered a relevant resolver. Ranking quality is measured only when at least
+one relevant resolver has pre-issue history; candidate coverage is reported
+separately so cold-start issues do not masquerade as ranking failures.
 """
 import json
 from datetime import datetime
@@ -40,39 +45,64 @@ def run_replay(
 
     conn = get_conn()
 
-    # Get test issues — closed after test_after with a known resolver
-    test_issues = conn.execute("""
+    # Fetch linked issues and aggregate all PR authors as relevant outcomes.
+    # A join without aggregation duplicated issues with multiple linked PRs and
+    # arbitrarily treated one author as the sole correct answer.
+    rows = conn.execute("""
         SELECT i.*, l.resolver
         FROM issues i
         JOIN issue_pr_links l ON l.repo=i.repo AND l.issue_num=i.number
         WHERE i.repo=? AND i.state='closed'
           AND i.closed_at > ?
+          AND i.created_at >= ?
+          AND (i.state_reason IS NULL OR i.state_reason != 'not_planned')
           AND l.resolver IS NOT NULL AND l.resolver != ''
         ORDER BY i.closed_at ASC
-        LIMIT ?
-    """, (repo, test_after, max_test_issues)).fetchall()
+    """, (repo, test_after, train_before)).fetchall()
     conn.close()
+
+    grouped = {}
+    for row in rows:
+        issue = dict(row)
+        resolver = issue.pop("resolver")
+        number = issue["number"]
+        if number not in grouped:
+            grouped[number] = {"issue": issue, "resolvers": set()}
+        if resolver:
+            grouped[number]["resolvers"].add(resolver)
+    test_issues = list(grouped.values())[:max_test_issues]
 
     if not test_issues:
         print(f"[replay] No test issues found for {repo} after {test_after}")
-        return {"top1": 0, "top3": 0, "top5": 0, "mrr": 0, "n": 0}
+        return {
+            "top1": 0, "top3": 0, "top5": 0, "mrr": 0, "n": 0,
+            "test_issues": 0, "eligible_issues": 0,
+            "candidate_coverage": 0, "excluded_no_candidate": 0,
+            "unavailable_signals": ["workload", "historical_domain_profile"],
+            "repo": repo,
+        }
 
     print(f"[replay] {len(test_issues)} test issues for {repo}")
 
     engine = ScoringEngine()
     if signals_config:
         engine.weights.update(signals_config)
+    # The database stores current assignees, not assignment event history, so
+    # historical workload cannot be reconstructed without future leakage.
+    engine.weights["w6_workload_penalty"] = 0.0
 
     hits1 = hits3 = hits5 = 0
     reciprocal_ranks = []
+    eligible_issues = 0
+    covered_issues = 0
 
     # Track cache stats
     cache_hits = 0
     cache_misses = 0
 
-    for idx, row in enumerate(test_issues):
-        issue  = dict(row)
-        actual = issue.pop("resolver")
+    for idx, item in enumerate(test_issues):
+        issue = item["issue"]
+        actual = item["resolvers"]
         cutoff = issue.get("created_at", train_before)
 
         # Build profiles using only data before this issue was created (with caching)
@@ -87,12 +117,23 @@ def run_replay(
         engine.fit(repo, profiles)
 
         extracted = extract(issue)
+        # Recency must be evaluated as it was known when the issue appeared,
+        # not relative to the machine's current date.
+        extracted["evaluation_as_of"] = cutoff
         ranking   = engine.rank(extracted, profiles)
         ranked_devs = [r["developer"] for r in ranking]
 
+        # Only assess ranking when the replay has evidence for at least one
+        # ground-truth resolver. Keep this distinct from model coverage.
+        relevant_candidates = actual.intersection(ranked_devs)
+        if not relevant_candidates:
+            continue
+        eligible_issues += 1
+        covered_issues += 1
+
         rank = None
         for i, dev in enumerate(ranked_devs, start=1):
-            if dev == actual:
+            if dev in actual:
                 rank = i
                 break
 
@@ -105,15 +146,22 @@ def run_replay(
             reciprocal_ranks.append(0.0)
 
         if (idx + 1) % 50 == 0:
-            print(f"  [{idx+1}/{len(test_issues)}] running top-5: {hits5/(idx+1)*100:.1f}%  (cache: {cache_hits}h/{cache_misses}m)")
+            running = hits5 / eligible_issues * 100 if eligible_issues else 0
+            print(f"  [{idx+1}/{len(test_issues)}] eligible Top-5: {running:.1f}%  (cache: {cache_hits}h/{cache_misses}m)")
 
-    n = len(test_issues)
+    n = eligible_issues
+    test_n = len(test_issues)
     results = {
-        "top1": round(hits1 / n * 100, 2),
-        "top3": round(hits3 / n * 100, 2),
-        "top5": round(hits5 / n * 100, 2),
-        "mrr":  round(sum(reciprocal_ranks) / n, 4),
+        "top1": round(hits1 / n * 100, 2) if n else 0,
+        "top3": round(hits3 / n * 100, 2) if n else 0,
+        "top5": round(hits5 / n * 100, 2) if n else 0,
+        "mrr":  round(sum(reciprocal_ranks) / n, 4) if n else 0,
         "n":    n,
+        "test_issues": test_n,
+        "eligible_issues": n,
+        "candidate_coverage": round(covered_issues / test_n * 100, 2) if test_n else 0,
+        "excluded_no_candidate": test_n - n,
+        "unavailable_signals": ["workload", "historical_domain_profile"],
         "repo": repo,
     }
     print(f"\n[replay] Results for {repo}:")

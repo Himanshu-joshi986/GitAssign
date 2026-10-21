@@ -66,7 +66,7 @@ CONFIGS = {
         }
     },
     "E": {
-        "name": "Full model (all 6 signals)",
+        "name": "All historically evaluable signals",
         "weights": {
             "w1_text_similarity":       0.35,
             "w2_past_issue_similarity": 0.25,
@@ -122,13 +122,14 @@ def _save_results(results: dict, repo: str, path: str):
         f"",
         f"**Repository:** `{repo}`",
         f"",
-        f"| Config | Signals | Top-1 (%) | Top-3 (%) | Top-5 (%) | MRR | N |",
-        f"|--------|---------|-----------|-----------|-----------|-----|---|",
+        f"| Config | Signals | Top-1 (%) | Top-3 (%) | Top-5 (%) | MRR | Eligible N | Candidate coverage (%) | Test issues |",
+        f"|--------|---------|-----------|-----------|-----------|-----|------------|------------------------|-------------|",
     ]
     for key, r in results.items():
         lines.append(
             f"| {key} | {r.get('config_name','')} "
-            f"| {r['top1']} | {r['top3']} | {r['top5']} | {r['mrr']} | {r['n']} |"
+            f"| {r['top1']} | {r['top3']} | {r['top5']} | {r['mrr']} | {r['n']} "
+            f"| {r.get('candidate_coverage', 0)} | {r.get('test_issues', r['n'])} |"
         )
     lines += ["", "## Raw JSON", "```json", json.dumps(results, indent=2), "```"]
 
